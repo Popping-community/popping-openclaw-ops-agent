@@ -1,0 +1,10 @@
+*.md
+!docs/**/*.md
+!workspace-ops/**/*.md
+!workspace-ops/**/SKILL.md
+!workspace-dba/**/*.md
+!workspace-dba/**/SKILL.md
+!workspace-dev/**/*.md
+!workspace-dev/**/SKILL.md
+.git
+node_modules

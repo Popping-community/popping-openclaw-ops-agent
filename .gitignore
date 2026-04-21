@@ -1,0 +1,21 @@
+.env
+.env.*
+*.log
+railway.log
+
+.claude/
+.idea/
+.vscode/
+
+node_modules/
+.DS_Store
+Thumbs.db
+
+# Local operator profile; keep repo-safe workspace instructions in tracked files.
+workspace-ops/USER.md
+
+# Runtime state and secrets
+.openclaw/
+*.pem
+*.key
+*.crt

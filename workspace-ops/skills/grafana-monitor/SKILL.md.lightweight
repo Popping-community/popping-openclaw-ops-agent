@@ -1,0 +1,65 @@
+---
+name: grafana-monitor
+description: "SSH into EC2 and query exporters directly (actuator, node-exporter, mysqld-exporter). Reports thread/DB connection usage, JVM, memory, disk, slow queries."
+metadata:
+  {
+    "openclaw":
+      {
+        "emoji": "📊",
+        "requires": { "bins": ["ssh"] },
+        "install": [],
+      },
+  }
+---
+
+# Grafana Monitor Skill
+
+SSH로 EC2에 접속하여 3개 exporter에서 메트릭을 수집한다.
+
+## Trigger Phrases
+
+- "서버 상태 확인해줘", "메트릭 확인해줘", "서버 상태", "대시보드"
+- "CPU/메모리 사용량", "JVM 상태"
+- "응답시간 확인", "에러율 확인"
+
+## 메트릭 수집 (Single SSH Session)
+
+**항상 아래 명령어를 사용한다.** 개별 SSH 세션을 여러 번 열지 않는다.
+
+```bash
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 -o ConnectTimeout=5 ec2-user@52.79.56.222 bash -c '
+echo "=== ACTUATOR HEALTH ==="
+curl -s http://localhost:8081/actuator/health
+
+echo ""
+echo "=== SPRING BOOT METRICS ==="
+curl -s http://localhost:8081/actuator/prometheus | grep -E "^(http_server_requests_seconds_(count|sum)|tomcat_threads|hikaricp_connections_(active|max)|jvm_memory_(used|max)_bytes.*heap|jvm_gc_pause|cache_gets_total)" | grep -v "#"
+
+echo ""
+echo "=== NODE METRICS ==="
+curl -s http://localhost:9100/metrics | grep -E "^(node_memory_(MemAvailable|MemTotal|SwapFree|SwapTotal)_bytes |node_load(1|5|15) |node_filesystem_(avail|size)_bytes.*fstype=\"xfs\"|node_disk_io_time|node_network_(receive|transmit)_bytes_total.*eth0|node_time_seconds |node_boot_time_seconds |node_filefd)" | grep -v "#" | grep -v tmpfs
+
+echo ""
+echo "=== MYSQL METRICS ==="
+curl -s http://localhost:9104/metrics | grep -E "^mysql_global_(status_(threads_connected|queries|slow_queries|innodb_buffer_pool_read|innodb_row_lock|threads_created|connections|table_locks_waited|aborted_connects)|variables_max_connections) " | grep -v "#"
+'
+```
+
+## 메트릭 해석
+
+- **Gauge** (예: `node_load1 0.5`): 현재 값, 그대로 사용
+- **Counter** (예: `mysql_global_status_queries 71544`): 누적 값, 반드시 "(누적)"으로 표기
+
+## Severity Thresholds
+
+| Metric | WARN | CRITICAL |
+|--------|------|----------|
+| CPU (Load Avg, 1 vCPU) | > 1.0 | > 2.0 |
+| Memory | > 80% | > 95% |
+| Swap | > 50% | > 80% |
+| JVM Heap | > 80% | > 95% |
+| DB Connection (HikariCP) | > 70% | > 90% |
+| Tomcat Thread | > 70% | > 90% |
+| Disk Usage | > 80% | > 90% |
+
+Overall severity = highest individual severity.

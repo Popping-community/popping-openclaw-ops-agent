@@ -1,0 +1,137 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/root/.openclaw/workspace",
+      "models": {
+        "claude-cli/claude-opus-4-7": {},
+        "claude-cli/claude-sonnet-4-6": {},
+        "claude-cli/claude-opus-4-6": {},
+        "claude-cli/claude-opus-4-5": {},
+        "claude-cli/claude-sonnet-4-5": {},
+        "claude-cli/claude-haiku-4-5": {},
+        "anthropic/claude-sonnet-4-6": {}
+      },
+      "model": {
+        "primary": "fireworks/accounts/fireworks/models/deepseek-v3p2"
+      },
+      "llm": {
+        "idleTimeoutSeconds": 120
+      }
+    }
+  },
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "mode": "token",
+      "token": "GATEWAY_TOKEN_PLACEHOLDER"
+    },
+    "port": 18789,
+    "bind": "0.0.0.0",
+    "http": {
+      "endpoints": {
+        "responses": {
+          "enabled": true
+        }
+      }
+    },
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "nodes": {
+      "denyCommands": [
+        "camera.snap",
+        "camera.clip",
+        "screen.record",
+        "contacts.add",
+        "calendar.add",
+        "reminders.add",
+        "sms.send",
+        "sms.search"
+      ]
+    }
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "models": {
+    "providers": {
+      "fireworks": {
+        "baseUrl": "https://api.fireworks.ai/inference/v1",
+        "apiKey": "FIREWORKS_API_KEY_PLACEHOLDER",
+        "auth": "api-key",
+        "models": [
+          {
+            "name": "accounts/fireworks/models/deepseek-v3p2",
+            "id": "accounts/fireworks/models/deepseek-v3p2"
+          }
+        ]
+      }
+    }
+  },
+  "tools": {
+    "profile": "coding",
+    "web": {
+      "search": {
+        "provider": "gemini",
+        "enabled": false
+      }
+    }
+  },
+  "auth": {
+    "profiles": {
+      "fireworks": {
+        "provider": "fireworks",
+        "mode": "api_key"
+      }
+    }
+  },
+  "channels": {
+    "discord": {
+      "enabled": true,
+      "accounts": {
+        "main": {
+          "token": "DISCORD_TOKEN_PLACEHOLDER"
+        },
+        "dba": {
+          "token": "DISCORD_DBA_TOKEN_PLACEHOLDER"
+        },
+        "dev": {
+          "token": "DISCORD_DEV_TOKEN_PLACEHOLDER"
+        }
+      },
+      "groupPolicy": "allowlist",
+      "allowFrom": [
+        "1149669408751489025"
+      ],
+      "guilds": {
+        "1495404361474637884": {
+          "requireMention": false
+        }
+      }
+    }
+  },
+  "plugins": {
+    "entries": {
+      "fireworks": {
+        "enabled": true
+      }
+    }
+  },
+  "hooks": {
+    "internal": {
+      "enabled": true,
+      "entries": {
+        "boot-md": {
+          "enabled": true
+        },
+        "command-logger": {
+          "enabled": true
+        },
+        "session-memory": {
+          "enabled": true
+        }
+      }
+    }
+  }
+}
