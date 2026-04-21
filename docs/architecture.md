@@ -17,7 +17,7 @@ EC2 exporters / Spring Boot actuator
 ## Detection Layer
 
 `scripts/health-check.sh`가 Railway 컨테이너에서 백그라운드로 실행된다.
-30분마다 EC2에 SSH로 접속해 Spring Boot health, node-exporter, mysqld-exporter, actuator metrics를 수집한다.
+10분마다 EC2에 SSH로 접속해 Spring Boot health, node-exporter, mysqld-exporter, actuator metrics를 수집한다.
 
 이 레이어는 LLM을 호출하지 않는다. 메모리, load, disk, 응답시간, 에러율 같은 임계값 판단과 상태 전이 감지는 bash에서 직접 처리한다.
 
@@ -52,9 +52,9 @@ Snapshot freshness 기준:
 
 | Snapshot age | Status | Meaning |
 |--------------|--------|---------|
-| 45분 미만 | OK | 최신 데이터 |
-| 45분 이상 | WARN | 오래된 snapshot |
-| 90분 이상 | CRITICAL | 수집 중단 가능성 |
+| 20분 미만 | OK | 최신 데이터 |
+| 20분 이상 | WARN | 오래된 snapshot |
+| 30분 이상 | CRITICAL | 수집 중단 가능성 |
 
 보고서에는 측정 시각과 freshness를 함께 표시한다.
 

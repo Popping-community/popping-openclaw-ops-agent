@@ -4,7 +4,21 @@
 
 SSH_CMD="ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p 2222 ec2-user@52.79.56.222"
 WEBHOOK_URL="${DISCORD_WEBHOOK_URL:-}"
-CHECK_INTERVAL=1800  # 30분 (초)
+CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL_SECONDS:-600}"  # 10분 (초)
+case "$CHECK_INTERVAL" in
+  ''|*[!0-9]*)
+    echo "WARNING: invalid HEALTH_CHECK_INTERVAL_SECONDS='${CHECK_INTERVAL}', using 600"
+    CHECK_INTERVAL=600
+    ;;
+esac
+if [ "$CHECK_INTERVAL" -lt 60 ]; then
+  echo "WARNING: HEALTH_CHECK_INTERVAL_SECONDS must be >= 60, using 60"
+  CHECK_INTERVAL=60
+fi
+SNAPSHOT_INTERVAL_MIN=$((CHECK_INTERVAL / 60))
+if [ "$SNAPSHOT_INTERVAL_MIN" -lt 1 ]; then
+  SNAPSHOT_INTERVAL_MIN=1
+fi
 CRITICAL_REMINDER_SECONDS=7200  # 2시간
 CRITICAL_REMINDER_CHECKS=3
 MONITOR_FAILURE_THRESHOLD=2
@@ -263,7 +277,7 @@ counter_rate() {
   }"
 }
 
-# --- 30분마다: Health Quick Check ---
+# --- 10분마다: Health Quick Check ---
 health_check() {
   log "Running health check..."
 
@@ -292,7 +306,7 @@ health_check() {
   fi
 }
 
-# --- 30분마다: Resource Quick Check + Snapshot Update ---
+# --- 10분마다: Resource Quick Check + Snapshot Update ---
 resource_check() {
   log "Running resource check..."
 
@@ -518,7 +532,7 @@ REMOTE_SCRIPT
 collected_at_epoch="$now_ts"
 collected_at_utc="$collected_at_utc"
 collected_at_kst="$collected_at_kst"
-snapshot_interval_min="30"
+snapshot_interval_min="$SNAPSHOT_INTERVAL_MIN"
 data_source="health-check snapshot"
 overall_severity="$overall_severity"
 overall_status="$overall_status"
@@ -592,7 +606,7 @@ main() {
   fi
 
   while true; do
-    # 매 30분: Health Check + Resource Snapshot
+    # 매 10분: Health Check + Resource Snapshot
     health_check || true
     resource_check || true
 

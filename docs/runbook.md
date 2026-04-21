@@ -40,7 +40,7 @@ grep -E "mem_usage|jvm_heap|collected_at" /tmp/health-check-alerts/status-curren
 ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "free -m && ps aux --sort=-%mem | head -15 && docker stats --no-stream"
 ```
 
-3. 메모리 증가가 일시적이면 다음 30분 체크까지 관찰한다. WARN 유지 상태에서는 반복 알림이 오지 않는 것이 정상이다.
+3. 메모리 증가가 일시적이면 다음 10분 체크까지 관찰한다. WARN 유지 상태에서는 반복 알림이 오지 않는 것이 정상이다.
 
 4. 원인이 애플리케이션이면 최근 배포/트래픽/배치 작업을 확인한다.
 
@@ -166,8 +166,8 @@ railway up
 
 기준:
 
-- 45분 이상 오래됨: WARN
-- 90분 이상 오래됨: CRITICAL 또는 수집 중단 가능성
+- 20분 이상 오래됨: WARN
+- 30분 이상 오래됨: CRITICAL 또는 수집 중단 가능성
 
 1. snapshot 측정 시각을 확인한다.
 

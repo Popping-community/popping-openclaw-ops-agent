@@ -8,6 +8,8 @@ SNAPSHOT_FILE="${STATE_DIR}/status-current.env"
 FULL_REPORT_STATE_FILE="${STATE_DIR}/full-report.state"
 LAST_SUCCESS_FILE="${STATE_DIR}/last_success.state"
 REPO="Popping-community/popping-server"
+SNAPSHOT_STALE_WARN_MIN="${SNAPSHOT_STALE_WARN_MIN:-20}"
+SNAPSHOT_STALE_CRITICAL_MIN="${SNAPSHOT_STALE_CRITICAL_MIN:-30}"
 
 mkdir -p "$STATE_DIR"
 
@@ -33,10 +35,10 @@ read_snapshot() {
   if [ -n "$collected_at_epoch" ]; then
     snapshot_age_min=$(( (now_epoch - collected_at_epoch) / 60 ))
     print_kv "snapshot_age_min" "$snapshot_age_min"
-    if [ "$snapshot_age_min" -ge 90 ]; then
+    if [ "$snapshot_age_min" -ge "$SNAPSHOT_STALE_CRITICAL_MIN" ]; then
       print_kv "snapshot_freshness_status" "CRITICAL"
       print_kv "snapshot_freshness_label" "수집 중단 가능성"
-    elif [ "$snapshot_age_min" -ge 45 ]; then
+    elif [ "$snapshot_age_min" -ge "$SNAPSHOT_STALE_WARN_MIN" ]; then
       print_kv "snapshot_freshness_status" "WARN"
       print_kv "snapshot_freshness_label" "오래됨"
     else
