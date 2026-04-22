@@ -1,7 +1,7 @@
 # PoppingOps - AI 기반 서버 모니터링 Discord 봇
 
 > 이 저장소는 포트폴리오와 버전관리를 위한 공개 저장소입니다.
-> 운영 배포는 GitHub 자동 배포와 분리하고, Railway CLI 수동 배포로 통제합니다.
+> 운영 배포는 GitHub Actions 검증을 통과한 `main` branch commit만 Railway가 자동 배포하도록 구성합니다.
 
 Popping Community 백엔드 서버를 모니터링하는 Discord 운영 봇이다.
 OpenClaw Gateway 위에서 3개의 전문 에이전트가 역할을 나누고, 반복적인 헬스체크는 LLM을 쓰지 않는 bash 스크립트가 처리한다.
@@ -232,6 +232,10 @@ Railway Variables에 설정한다.
 | `OPENCLAW_LOG_LEVEL` | 선택 | `debug` 설정 시 LLM duration/context 진단 로그 확인 가능 |
 
 ## 배포 흐름
+
+GitHub `main` branch에 push하면 GitHub Actions `Validate` workflow가 shell script 문법을 먼저 검증한다.
+Railway service는 GitHub repository와 연결하고, `Wait for CI`를 켜서 CI 성공 commit만 자동 배포한다.
+검증 실패 시 Railway 배포가 시작되지 않는 것이 정상 동작이다.
 
 Dockerfile 기반으로 빌드되며, 컨테이너 시작 시 `entrypoint.sh`가 다음을 수행한다.
 
