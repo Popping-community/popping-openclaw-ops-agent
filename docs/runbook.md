@@ -4,15 +4,15 @@
 
 ## 공통 확인
 
-Runbook 명령은 아래 target 변수를 사용한다. Railway Variables에 없으면 현재 기본 운영값을 사용한다.
+Runbook 명령은 아래 target 변수를 사용한다. 값은 Railway Variables에서 가져오며, 공개 문서에는 실제 host/user/port를 기록하지 않는다.
 
 ```bash
-export EC2_HOST="${EC2_HOST:-52.79.56.222}"
-export EC2_SSH_PORT="${EC2_SSH_PORT:-2222}"
-export EC2_SSH_USER="${EC2_SSH_USER:-ec2-user}"
-export APP_ACTUATOR_PORT="${APP_ACTUATOR_PORT:-8081}"
-export NODE_EXPORTER_PORT="${NODE_EXPORTER_PORT:-9100}"
-export MYSQL_EXPORTER_PORT="${MYSQL_EXPORTER_PORT:-9104}"
+: "${EC2_HOST:?EC2_HOST is required}"
+: "${EC2_SSH_PORT:?EC2_SSH_PORT is required}"
+: "${EC2_SSH_USER:?EC2_SSH_USER is required}"
+: "${APP_ACTUATOR_PORT:?APP_ACTUATOR_PORT is required}"
+: "${NODE_EXPORTER_PORT:?NODE_EXPORTER_PORT is required}"
+: "${MYSQL_EXPORTER_PORT:?MYSQL_EXPORTER_PORT is required}"
 ```
 
 최근 health-check 로그를 먼저 확인한다.

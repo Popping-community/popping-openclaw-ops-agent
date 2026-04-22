@@ -2,12 +2,12 @@
 # health-check.sh — OpenClaw 외부에서 동작하는 순수 bash 헬스체크
 # 정상 시 토큰 소비 0, 이상 시 Discord Webhook으로 알림
 
-EC2_HOST="${EC2_HOST:-52.79.56.222}"
-EC2_SSH_PORT="${EC2_SSH_PORT:-2222}"
-EC2_SSH_USER="${EC2_SSH_USER:-ec2-user}"
-APP_ACTUATOR_PORT="${APP_ACTUATOR_PORT:-8081}"
-NODE_EXPORTER_PORT="${NODE_EXPORTER_PORT:-9100}"
-MYSQL_EXPORTER_PORT="${MYSQL_EXPORTER_PORT:-9104}"
+EC2_HOST="${EC2_HOST:-}"
+EC2_SSH_PORT="${EC2_SSH_PORT:-}"
+EC2_SSH_USER="${EC2_SSH_USER:-}"
+APP_ACTUATOR_PORT="${APP_ACTUATOR_PORT:-}"
+NODE_EXPORTER_PORT="${NODE_EXPORTER_PORT:-}"
+MYSQL_EXPORTER_PORT="${MYSQL_EXPORTER_PORT:-}"
 WEBHOOK_URL="${DISCORD_WEBHOOK_URL:-}"
 CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL_SECONDS:-600}"  # 10분 (초)
 case "$CHECK_INTERVAL" in
@@ -28,12 +28,11 @@ fi
 validate_port() {
   local name="$1"
   local value="$2"
-  local default="$3"
 
   case "$value" in
     ''|*[!0-9]*)
-      echo "WARNING: invalid ${name}='${value}', using ${default}" >&2
-      printf '%s' "$default"
+      echo "ERROR: invalid ${name}='${value}'" >&2
+      return 1
       ;;
     *)
       printf '%s' "$value"
@@ -41,10 +40,15 @@ validate_port() {
   esac
 }
 
-EC2_SSH_PORT=$(validate_port "EC2_SSH_PORT" "$EC2_SSH_PORT" "2222")
-APP_ACTUATOR_PORT=$(validate_port "APP_ACTUATOR_PORT" "$APP_ACTUATOR_PORT" "8081")
-NODE_EXPORTER_PORT=$(validate_port "NODE_EXPORTER_PORT" "$NODE_EXPORTER_PORT" "9100")
-MYSQL_EXPORTER_PORT=$(validate_port "MYSQL_EXPORTER_PORT" "$MYSQL_EXPORTER_PORT" "9104")
+EC2_SSH_PORT=$(validate_port "EC2_SSH_PORT" "$EC2_SSH_PORT") || exit 1
+APP_ACTUATOR_PORT=$(validate_port "APP_ACTUATOR_PORT" "$APP_ACTUATOR_PORT") || exit 1
+NODE_EXPORTER_PORT=$(validate_port "NODE_EXPORTER_PORT" "$NODE_EXPORTER_PORT") || exit 1
+MYSQL_EXPORTER_PORT=$(validate_port "MYSQL_EXPORTER_PORT" "$MYSQL_EXPORTER_PORT") || exit 1
+
+if [ -z "$EC2_HOST" ] || [ -z "$EC2_SSH_USER" ]; then
+  echo "ERROR: EC2_HOST and EC2_SSH_USER are required" >&2
+  exit 1
+fi
 
 CRITICAL_REMINDER_SECONDS=7200  # 2시간
 CRITICAL_REMINDER_CHECKS=3

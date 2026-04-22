@@ -11,7 +11,7 @@ EC2 (`EC2_HOST`)
 ## SSH
 
 - `ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}"`
-- Default target values: `EC2_HOST=52.79.56.222`, `EC2_SSH_PORT=2222`, `EC2_SSH_USER=ec2-user`
+- Target values are required Railway Variables and are not stored in this public repository.
 - MySQL: `docker exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} -e "QUERY"`
 
 ## Metrics

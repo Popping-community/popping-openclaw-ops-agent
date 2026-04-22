@@ -24,7 +24,7 @@ Railway (this bot)
 ## SSH
 
 - **EC2 Production** — `ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}"`
-- Default target values: `EC2_HOST=52.79.56.222`, `EC2_SSH_PORT=2222`, `EC2_SSH_USER=ec2-user`
+- Target values are required Railway Variables and are not stored in this public repository.
 - MySQL runs in Docker container named `mysql` → use `docker exec mysql` for DB access
 - SSH key path: `/root/.ssh/ec2-key.pem`
 
@@ -64,6 +64,6 @@ Heartbeat reports:
 ## Application
 
 - **App Port**: 8080 (EC2)
-- **Actuator Port**: `APP_ACTUATOR_PORT` (default `8081`)
+- **Actuator Port**: `APP_ACTUATOR_PORT`
 - **Docker Image**: `chooh1010/popping-community:latest`
 - **Actuator Endpoints**: health, prometheus

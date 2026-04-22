@@ -3,12 +3,12 @@
 echo "=== PoppingOps Entrypoint ==="
 echo "Checking environment variables..."
 
-EC2_HOST="${EC2_HOST:-52.79.56.222}"
-EC2_SSH_PORT="${EC2_SSH_PORT:-2222}"
-EC2_SSH_USER="${EC2_SSH_USER:-ec2-user}"
-APP_ACTUATOR_PORT="${APP_ACTUATOR_PORT:-8081}"
-NODE_EXPORTER_PORT="${NODE_EXPORTER_PORT:-9100}"
-MYSQL_EXPORTER_PORT="${MYSQL_EXPORTER_PORT:-9104}"
+EC2_HOST="${EC2_HOST:-}"
+EC2_SSH_PORT="${EC2_SSH_PORT:-}"
+EC2_SSH_USER="${EC2_SSH_USER:-}"
+APP_ACTUATOR_PORT="${APP_ACTUATOR_PORT:-}"
+NODE_EXPORTER_PORT="${NODE_EXPORTER_PORT:-}"
+MYSQL_EXPORTER_PORT="${MYSQL_EXPORTER_PORT:-}"
 export EC2_HOST EC2_SSH_PORT EC2_SSH_USER APP_ACTUATOR_PORT NODE_EXPORTER_PORT MYSQL_EXPORTER_PORT
 
 wait_for_gateway() {
@@ -57,6 +57,12 @@ require_env "DISCORD_DBA_TOKEN"
 require_env "DISCORD_DEV_TOKEN"
 require_env "DISCORD_WEBHOOK_URL"
 require_env "GATEWAY_TOKEN"
+require_env "EC2_HOST"
+require_env "EC2_SSH_PORT"
+require_env "EC2_SSH_USER"
+require_env "APP_ACTUATOR_PORT"
+require_env "NODE_EXPORTER_PORT"
+require_env "MYSQL_EXPORTER_PORT"
 
 if [ "$missing_required_env" -ne 0 ]; then
   echo "Fatal: required environment variables are missing; refusing to start"

@@ -223,12 +223,12 @@ Railway Variables에 설정한다.
 | `GH_TOKEN` | 선택 | GitHub CLI 인증 토큰 |
 | `GATEWAY_TOKEN` | O | OpenClaw Gateway token |
 | `OPENCLAW_GATEWAY_TOKEN` | 선택 | OpenClaw Gateway token override. 설정 시 Daily Summary scheduler가 우선 사용 |
-| `EC2_HOST` | 선택 | 모니터링 대상 EC2 host. 기본값 `52.79.56.222` |
-| `EC2_SSH_PORT` | 선택 | EC2 SSH port. 기본값 `2222` |
-| `EC2_SSH_USER` | 선택 | EC2 SSH user. 기본값 `ec2-user` |
-| `APP_ACTUATOR_PORT` | 선택 | Spring Boot actuator port. 기본값 `8081` |
-| `NODE_EXPORTER_PORT` | 선택 | node-exporter port. 기본값 `9100` |
-| `MYSQL_EXPORTER_PORT` | 선택 | mysqld-exporter port. 기본값 `9104` |
+| `EC2_HOST` | O | 모니터링 대상 EC2 host |
+| `EC2_SSH_PORT` | O | EC2 SSH port |
+| `EC2_SSH_USER` | O | EC2 SSH user |
+| `APP_ACTUATOR_PORT` | O | Spring Boot actuator port |
+| `NODE_EXPORTER_PORT` | O | node-exporter port |
+| `MYSQL_EXPORTER_PORT` | O | mysqld-exporter port |
 | `HEALTH_CHECK_INTERVAL_SECONDS` | 선택 | health/resource snapshot 수집 주기. 기본값 `600` |
 | `SNAPSHOT_STALE_WARN_MIN` | 선택 | snapshot 오래됨 WARN 기준. 기본값 `20` |
 | `SNAPSHOT_STALE_CRITICAL_MIN` | 선택 | snapshot 수집 중단 CRITICAL 기준. 기본값 `30` |
