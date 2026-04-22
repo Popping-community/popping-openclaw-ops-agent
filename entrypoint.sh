@@ -3,27 +3,26 @@
 echo "=== PoppingOps Entrypoint ==="
 echo "Checking environment variables..."
 
-# Check required env vars
-if [ -z "$DISCORD_TOKEN" ]; then
-  echo "ERROR: DISCORD_TOKEN is not set"
-fi
-if [ -z "$FIREWORKS_API_KEY" ]; then
-  echo "ERROR: FIREWORKS_API_KEY is not set"
-fi
-if [ -z "$SSH_PRIVATE_KEY" ]; then
-  echo "ERROR: SSH_PRIVATE_KEY is not set"
-fi
-if [ -z "$DISCORD_DBA_TOKEN" ]; then
-  echo "ERROR: DISCORD_DBA_TOKEN is not set"
-fi
-if [ -z "$DISCORD_DEV_TOKEN" ]; then
-  echo "ERROR: DISCORD_DEV_TOKEN is not set"
-fi
-if [ -z "$DISCORD_WEBHOOK_URL" ]; then
-  echo "WARNING: DISCORD_WEBHOOK_URL is not set — health-check alerts will only be logged"
-fi
-if [ -z "$GATEWAY_TOKEN" ]; then
-  echo "ERROR: GATEWAY_TOKEN is not set"
+# Check required env vars before starting any background processes.
+missing_required_env=0
+require_env() {
+  local name="$1"
+  if [ -z "${!name:-}" ]; then
+    echo "ERROR: ${name} is not set"
+    missing_required_env=1
+  fi
+}
+
+require_env "DISCORD_TOKEN"
+require_env "FIREWORKS_API_KEY"
+require_env "SSH_PRIVATE_KEY"
+require_env "DISCORD_DBA_TOKEN"
+require_env "DISCORD_DEV_TOKEN"
+require_env "DISCORD_WEBHOOK_URL"
+require_env "GATEWAY_TOKEN"
+
+if [ "$missing_required_env" -ne 0 ]; then
+  echo "Fatal: required environment variables are missing; refusing to start"
   exit 1
 fi
 

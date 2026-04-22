@@ -216,12 +216,12 @@ Railway Variables에 설정한다.
 | `DISCORD_DEV_TOKEN` | O | PoppingDev Discord 봇 토큰 |
 | `FIREWORKS_API_KEY` | O | Fireworks AI API 키 |
 | `SSH_PRIVATE_KEY` | O | EC2 접속용 SSH private key |
-| `DISCORD_WEBHOOK_URL` | 권장 | health-check 알림용 Discord Webhook URL |
+| `DISCORD_WEBHOOK_URL` | O | health-check 알림용 Discord Webhook URL |
 | `DISCORD_FULL_REPORT_WEBHOOK_URL` | 선택 | Full Report 전송용 Webhook URL. 없으면 `DISCORD_REPORT_WEBHOOK_URL`, `DISCORD_WEBHOOK_URL` 순서로 fallback |
 | `DISCORD_DAILY_SUMMARY_WEBHOOK_URL` | 선택 | Daily Summary 전송용 Webhook URL. 없으면 `DISCORD_REPORT_WEBHOOK_URL`, `DISCORD_WEBHOOK_URL` 순서로 fallback |
 | `DISCORD_REPORT_WEBHOOK_URL` | 선택 | 리포트 전송용 공용 Webhook URL |
 | `GH_TOKEN` | 선택 | GitHub CLI 인증 토큰 |
-| `GATEWAY_TOKEN` | 선택 | OpenClaw Gateway token override |
+| `GATEWAY_TOKEN` | O | OpenClaw Gateway token |
 | `OPENCLAW_GATEWAY_TOKEN` | 선택 | OpenClaw Gateway token override. 설정 시 Daily Summary scheduler가 우선 사용 |
 | `HEALTH_CHECK_INTERVAL_SECONDS` | 선택 | health/resource snapshot 수집 주기. 기본값 `600` |
 | `SNAPSHOT_STALE_WARN_MIN` | 선택 | snapshot 오래됨 WARN 기준. 기본값 `20` |
@@ -235,15 +235,17 @@ Railway Variables에 설정한다.
 
 Dockerfile 기반으로 빌드되며, 컨테이너 시작 시 `entrypoint.sh`가 다음을 수행한다.
 
-1. SSH key 생성 및 EC2 접속 테스트
-2. `openclaw.json`에 secret 주입
-3. DBA/Dev 에이전트 등록 및 Discord account binding
-4. `health-check.sh`, `daily-summary-scheduler.sh`, `full-report-scheduler.sh` 백그라운드 실행
-5. OpenClaw Gateway 실행
+1. 필수 Railway Variables 누락 여부 확인. 누락 시 즉시 종료
+2. SSH key 생성 및 EC2 접속 테스트
+3. `openclaw.json`에 secret 주입
+4. DBA/Dev 에이전트 등록 및 Discord account binding
+5. `health-check.sh`, `daily-summary-scheduler.sh`, `full-report-scheduler.sh` 백그라운드 실행
+6. OpenClaw Gateway 실행
 
 ## 주의사항
 
 - `DISCORD_WEBHOOK_URL`은 secret이다. 채팅이나 공개 로그에 노출되면 새 Webhook을 발급해서 교체한다.
+- `DISCORD_WEBHOOK_URL` 또는 `GATEWAY_TOKEN`이 없으면 운영 알림/리포트가 불완전해지므로 컨테이너 시작 단계에서 실패시킨다.
 - `/tmp/health-check-alerts`는 컨테이너 로컬 상태이므로 재시작 직후 첫 rate 계산은 `init`일 수 있다.
 - Prometheus 서버는 현재 사용하지 않는다. Rate 지표는 `health-check.sh`가 이전 snapshot과 현재 counter 차이로 계산한다.
 - 정기 이상 감지는 LLM 분석 없이 동작한다. LLM은 사용자 요청, Full Report, Daily Summary에서만 사용한다.

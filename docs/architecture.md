@@ -132,3 +132,8 @@ snapshot이 오래됐으면 정상 수치처럼 보이더라도 freshness WARN/C
 
 이 구조 덕분에 정상 상태의 반복 체크는 토큰을 쓰지 않고, 사람이 읽어야 하는 보고서에서만 LLM을 사용한다.
 장애 대응 절차는 [runbook](runbook.md)에 분리되어 있다.
+
+## Startup Guardrail
+
+컨테이너 시작 시 `entrypoint.sh`는 필수 Railway Variables를 먼저 검증한다.
+`DISCORD_TOKEN`, `DISCORD_DBA_TOKEN`, `DISCORD_DEV_TOKEN`, `FIREWORKS_API_KEY`, `SSH_PRIVATE_KEY`, `DISCORD_WEBHOOK_URL`, `GATEWAY_TOKEN` 중 하나라도 없으면 background process를 시작하지 않고 종료한다.

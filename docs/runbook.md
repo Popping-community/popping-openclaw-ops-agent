@@ -140,6 +140,9 @@ ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79
 
 - `Webhook send failed`
 - `WEBHOOK_URL not set, skipping Discord alert`
+- `Fatal: required environment variables are missing; refusing to start`
+
+`DISCORD_WEBHOOK_URL`은 운영 알림 필수 변수다. 현재 `entrypoint.sh`는 이 값이 없으면 컨테이너를 시작하지 않는다.
 
 1. Railway 환경변수가 있는지 확인한다.
 
@@ -155,7 +158,7 @@ curl -i -H "Content-Type: application/json" -d '{"content":"webhook test"}' "$DI
 
 정상이면 Discord 채널에 메시지가 오고 HTTP `204 No Content`가 반환된다.
 
-3. 실패하면 Discord Webhook을 새로 발급하고 Railway 변수만 교체한다.
+3. 실패하거나 누락됐으면 Discord Webhook을 새로 발급하고 Railway 변수만 교체한다.
 
 ```bash
 railway variables set DISCORD_WEBHOOK_URL="새_WEBHOOK_URL"
