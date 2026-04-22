@@ -1,0 +1,26 @@
+name: Validate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  bash-syntax:
+    name: Bash syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate shell scripts
+        run: |
+          bash -n entrypoint.sh
+          bash -n scripts/health-check.sh
+          bash -n scripts/heartbeat-context.sh
+          bash -n scripts/full-report-scheduler.sh
+          bash -n scripts/daily-summary-scheduler.sh

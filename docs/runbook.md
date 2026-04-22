@@ -134,6 +134,21 @@ ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79
 
 5. 최근 배포 직후라면 GitHub Actions/배포 로그도 같이 본다.
 
+## GitHub push 후 Railway 배포가 시작되지 않음
+
+Railway service는 GitHub `main` branch와 연결되어 있고, `Wait for CI`가 켜져 있으면 GitHub Actions 검증이 성공한 commit만 배포한다.
+따라서 GitHub Actions 실패로 Railway 배포가 시작되지 않는 것은 정상적인 차단 동작이다.
+
+1. GitHub Actions `Validate` workflow가 성공했는지 확인한다.
+
+2. 실패했다면 `bash -n` 오류가 난 script를 수정하고 다시 push한다.
+
+3. Railway service가 GitHub `main` branch에 연결되어 있는지 확인한다.
+
+4. Railway deployment 설정에서 `Wait for CI`가 켜져 있는지 확인한다.
+
+5. CI는 성공했는데 배포가 없으면 Railway dashboard에서 최신 deployment 이벤트를 확인한다.
+
 ## Webhook 알림 실패 대응
 
 로그 예:
