@@ -3,12 +3,12 @@
 ## Architecture
 
 ```
-EC2 (52.79.56.222)
+EC2 (`EC2_HOST`)
 ├── docker-compose.yml
 │   ├── mysql (container, port 3306)
-│   ├── popping-community (app, port 8080, actuator 8081)
-│   ├── node-exporter (port 9100)
-│   └── mysqld-exporter (port 9104)
+│   ├── popping-community (actuator `APP_ACTUATOR_PORT`)
+│   ├── node-exporter (`NODE_EXPORTER_PORT`)
+│   └── mysqld-exporter (`MYSQL_EXPORTER_PORT`)
 │
 ↕ SSH from Railway
 │
@@ -23,7 +23,8 @@ Railway (this bot)
 
 ## SSH
 
-- **EC2 Production** — `ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222`
+- **EC2 Production** — `ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}"`
+- Default target values: `EC2_HOST=52.79.56.222`, `EC2_SSH_PORT=2222`, `EC2_SSH_USER=ec2-user`
 - MySQL runs in Docker container named `mysql` → use `docker exec mysql` for DB access
 - SSH key path: `/root/.ssh/ec2-key.pem`
 
@@ -38,10 +39,10 @@ The automatic monitoring path is `/scripts/health-check.sh`:
 - It separately tracks health SSH, resource SSH, resource parse, and snapshot write failures; two consecutive failures trigger a monitoring-pipeline alert.
 
 Exporter sources:
-- **Actuator** — `curl -s http://localhost:8081/actuator/prometheus` (Spring Boot metrics)
-- **Node Exporter** — `curl -s http://localhost:9100/metrics` (system metrics)
-- **MySQL Exporter** — `curl -s http://localhost:9104/metrics` (MySQL metrics)
-- **Actuator Health** — `curl -s http://localhost:8081/actuator/health`
+- **Actuator** — `curl -s "http://localhost:${APP_ACTUATOR_PORT}/actuator/prometheus"` (Spring Boot metrics)
+- **Node Exporter** — `curl -s "http://localhost:${NODE_EXPORTER_PORT}/metrics"` (system metrics)
+- **MySQL Exporter** — `curl -s "http://localhost:${MYSQL_EXPORTER_PORT}/metrics"` (MySQL metrics)
+- **Actuator Health** — `curl -s "http://localhost:${APP_ACTUATOR_PORT}/actuator/health"`
 
 User-facing server reports:
 - `서버 상태 확인해줘` → read Railway-local snapshot.
@@ -63,6 +64,6 @@ Heartbeat reports:
 ## Application
 
 - **App Port**: 8080 (EC2)
-- **Actuator Port**: 8081 (EC2)
+- **Actuator Port**: `APP_ACTUATOR_PORT` (default `8081`)
 - **Docker Image**: `chooh1010/popping-community:latest`
 - **Actuator Endpoints**: health, prometheus

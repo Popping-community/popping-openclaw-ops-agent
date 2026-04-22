@@ -3,17 +3,18 @@
 ## Architecture
 
 ```
-EC2 (52.79.56.222)
+EC2 (`EC2_HOST`)
 ├── mysql (Docker container, port 3306)
-└── mysqld-exporter (port 9104)
+└── mysqld-exporter (`MYSQL_EXPORTER_PORT`)
 ```
 
 ## SSH
 
-- `ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222`
+- `ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}"`
+- Default target values: `EC2_HOST=52.79.56.222`, `EC2_SSH_PORT=2222`, `EC2_SSH_USER=ec2-user`
 - MySQL: `docker exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} -e "QUERY"`
 
 ## Metrics
 
-- mysqld-exporter: `curl -s http://localhost:9104/metrics`
+- mysqld-exporter: `curl -s "http://localhost:${MYSQL_EXPORTER_PORT}/metrics"`
 - Slow query log: `docker exec mysql bash -c 'tail -100 /var/log/mysql/slow.log'`

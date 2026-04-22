@@ -4,6 +4,17 @@
 
 ## 공통 확인
 
+Runbook 명령은 아래 target 변수를 사용한다. Railway Variables에 없으면 현재 기본 운영값을 사용한다.
+
+```bash
+export EC2_HOST="${EC2_HOST:-52.79.56.222}"
+export EC2_SSH_PORT="${EC2_SSH_PORT:-2222}"
+export EC2_SSH_USER="${EC2_SSH_USER:-ec2-user}"
+export APP_ACTUATOR_PORT="${APP_ACTUATOR_PORT:-8081}"
+export NODE_EXPORTER_PORT="${NODE_EXPORTER_PORT:-9100}"
+export MYSQL_EXPORTER_PORT="${MYSQL_EXPORTER_PORT:-9104}"
+```
+
 최근 health-check 로그를 먼저 확인한다.
 
 ```bash
@@ -37,7 +48,7 @@ grep -E "mem_usage|jvm_heap|collected_at" /tmp/health-check-alerts/status-curren
 2. JVM heap이 낮고 system memory만 높으면 EC2의 다른 프로세스 또는 Docker 레벨 사용량을 확인한다.
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "free -m && ps aux --sort=-%mem | head -15 && docker stats --no-stream"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "free -m && ps aux --sort=-%mem | head -15 && docker stats --no-stream"
 ```
 
 3. 메모리 증가가 일시적이면 다음 10분 체크까지 관찰한다. WARN 유지 상태에서는 반복 알림이 오지 않는 것이 정상이다.
@@ -45,7 +56,7 @@ ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79
 4. 원인이 애플리케이션이면 최근 배포/트래픽/배치 작업을 확인한다.
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker logs --tail=200 popping-community"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker logs --tail=200 popping-community"
 ```
 
 ## 메모리 CRITICAL 대응
@@ -53,13 +64,13 @@ ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79
 1. 즉시 EC2 메모리 상태와 OOM 흔적을 확인한다.
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "free -m && dmesg -T | tail -80 | grep -Ei 'oom|killed process|out of memory' || true"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "free -m && dmesg -T | tail -80 | grep -Ei 'oom|killed process|out of memory' || true"
 ```
 
 2. 가장 큰 메모리 사용 프로세스를 확인한다.
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "ps aux --sort=-%mem | head -20 && docker stats --no-stream"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "ps aux --sort=-%mem | head -20 && docker stats --no-stream"
 ```
 
 3. JVM heap이 CRITICAL이면 heap dump 또는 GC 로그 확인을 우선한다. JVM heap은 정상인데 system memory만 높으면 MySQL, Docker, OS cache, 다른 프로세스를 의심한다.
@@ -67,7 +78,7 @@ ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79
 4. 서비스 영향이 있으면 애플리케이션 재시작을 검토한다. 재시작 전후로 Discord에 조치 내용을 남긴다.
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker restart popping-community"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker restart popping-community"
 ```
 
 5. CRITICAL이 지속되면 2시간 또는 3회 체크마다 재알림이 오는 것이 정상이다.
@@ -88,13 +99,13 @@ grep -Ei "SSH 연결|resource SSH|health SSH|Monitor" railway.log
 2. 로컬 또는 Railway shell에서 SSH 연결을 확인한다.
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p 2222 ec2-user@52.79.56.222 "echo ok"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "echo ok"
 ```
 
 3. 실패하면 아래 항목을 확인한다.
 
 - EC2 인스턴스 실행 상태
-- Security Group inbound `2222/tcp`
+- Security Group inbound `EC2_SSH_PORT/tcp`
 - EC2의 sshd 상태
 - Railway 환경변수 `SSH_PRIVATE_KEY`
 - EC2 IP 변경 여부
@@ -111,25 +122,25 @@ ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -
 1. EC2에서 actuator health를 직접 확인한다.
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "curl -s http://localhost:8081/actuator/health"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "curl -s http://localhost:${APP_ACTUATOR_PORT}/actuator/health"
 ```
 
 2. 컨테이너 상태와 포트 리스닝을 확인한다.
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker ps && ss -ltnp | grep -E ':8080|:8081' || true"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker ps && ss -ltnp | grep -E ':8080|:${APP_ACTUATOR_PORT}' || true"
 ```
 
 3. 애플리케이션 로그를 확인한다.
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker logs --tail=300 popping-community"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker logs --tail=300 popping-community"
 ```
 
 4. DB 연결 문제라면 MySQL 컨테이너와 connection 수를 확인한다.
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker ps | grep -i mysql && curl -s http://localhost:9104/metrics | grep -E '^mysql_global_(status_threads_connected|variables_max_connections)'"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker ps | grep -i mysql && curl -s http://localhost:${MYSQL_EXPORTER_PORT}/metrics | grep -E '^mysql_global_(status_threads_connected|variables_max_connections)'"
 ```
 
 5. 최근 배포 직후라면 GitHub Actions/배포 로그도 같이 본다.
@@ -235,13 +246,13 @@ grep -E "http_rps|avg_response|error_rate|rate_status" /tmp/health-check-alerts/
 3. 응답시간이 높으면 애플리케이션 로그, DB lock, slow query를 같이 확인한다.
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker logs --tail=300 popping-community && curl -s http://localhost:9104/metrics | grep -E '^mysql_global_status_(slow_queries|innodb_row_lock_waits|table_locks_waited)'"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker logs --tail=300 popping-community && curl -s http://localhost:${MYSQL_EXPORTER_PORT}/metrics | grep -E '^mysql_global_status_(slow_queries|innodb_row_lock_waits|table_locks_waited)'"
 ```
 
 4. 에러율이 높으면 최근 예외 로그와 HTTP 5xx 원인을 확인한다.
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker logs --tail=500 popping-community | grep -Ei 'error|exception|5[0-9][0-9]'"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker logs --tail=500 popping-community | grep -Ei 'error|exception|5[0-9][0-9]'"
 ```
 
 ## 복구 확인

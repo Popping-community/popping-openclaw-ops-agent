@@ -105,22 +105,29 @@ print_snapshot_with_freshness
 
 echo ""
 echo "=== REALTIME EC2 GAUGES ==="
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 -o ConnectTimeout=5 ec2-user@52.79.56.222 bash -c '
+EC2_HOST="${EC2_HOST:-52.79.56.222}"
+EC2_SSH_PORT="${EC2_SSH_PORT:-2222}"
+EC2_SSH_USER="${EC2_SSH_USER:-ec2-user}"
+APP_ACTUATOR_PORT="${APP_ACTUATOR_PORT:-8081}"
+NODE_EXPORTER_PORT="${NODE_EXPORTER_PORT:-9100}"
+MYSQL_EXPORTER_PORT="${MYSQL_EXPORTER_PORT:-9104}"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" -o ConnectTimeout=5 "${EC2_SSH_USER}@${EC2_HOST}" \
+  "APP_ACTUATOR_PORT=${APP_ACTUATOR_PORT} NODE_EXPORTER_PORT=${NODE_EXPORTER_PORT} MYSQL_EXPORTER_PORT=${MYSQL_EXPORTER_PORT} bash -s" <<'REMOTE_SCRIPT'
 echo "realtime_collected_at_utc=$(date -u "+%Y-%m-%dT%H:%M:%S+00:00")"
 echo "realtime_collected_at_kst=$(date -u -d "+9 hours" "+%Y-%m-%d %H:%M KST")"
 
 echo "=== ACTUATOR HEALTH ==="
-curl -s http://localhost:8081/actuator/health
+curl -s "http://localhost:${APP_ACTUATOR_PORT}/actuator/health"
 
 echo "=== SPRING BOOT GAUGES ==="
-curl -s http://localhost:8081/actuator/prometheus | grep -E "^(tomcat_threads|hikaricp_connections_(active|max)|jvm_memory_(used|max)_bytes.*heap|jvm_gc_pause_seconds_sum)" | grep -v "#"
+curl -s "http://localhost:${APP_ACTUATOR_PORT}/actuator/prometheus" | grep -E "^(tomcat_threads|hikaricp_connections_(active|max)|jvm_memory_(used|max)_bytes.*heap|jvm_gc_pause_seconds_sum)" | grep -v "#"
 
 echo "=== NODE GAUGES ==="
-curl -s http://localhost:9100/metrics | grep -E "^(node_memory_(MemAvailable|MemTotal|SwapFree|SwapTotal)_bytes |node_load(1|5|15) |node_filesystem_(avail|size)_bytes.*fstype=\"xfs\"|node_time_seconds |node_boot_time_seconds )" | grep -v "#" | grep -v tmpfs
+curl -s "http://localhost:${NODE_EXPORTER_PORT}/metrics" | grep -E "^(node_memory_(MemAvailable|MemTotal|SwapFree|SwapTotal)_bytes |node_load(1|5|15) |node_filesystem_(avail|size)_bytes.*fstype=\"xfs\"|node_time_seconds |node_boot_time_seconds )" | grep -v "#" | grep -v tmpfs
 
 echo "=== MYSQL GAUGES ==="
-curl -s http://localhost:9104/metrics | grep -E "^mysql_global_(status_threads_connected|variables_max_connections|status_queries|status_slow_queries|status_table_locks_waited) " | grep -v "#"
-'
+curl -s "http://localhost:${MYSQL_EXPORTER_PORT}/metrics" | grep -E "^mysql_global_(status_threads_connected|variables_max_connections|status_queries|status_slow_queries|status_table_locks_waited) " | grep -v "#"
+REMOTE_SCRIPT
 ```
 
 Report both timestamps:

@@ -28,19 +28,19 @@ MySQL runs inside a Docker container named `mysql`.
 ### Check Slow Query Log Status
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e \"SHOW VARIABLES LIKE 'slow_query%'; SHOW VARIABLES LIKE 'long_query_time';\""
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e \"SHOW VARIABLES LIKE 'slow_query%'; SHOW VARIABLES LIKE 'long_query_time';\""
 ```
 
 ### Fetch Recent Slow Queries
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker exec mysql bash -c 'tail -100 /var/log/mysql/slow.log 2>/dev/null || cat /dev/null'"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker exec mysql bash -c 'tail -100 /var/log/mysql/slow.log 2>/dev/null || cat /dev/null'"
 ```
 
 ### Check my.cnf Configuration
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "cat ~/popping-server/mysql/my.cnf 2>/dev/null || docker exec mysql cat /etc/mysql/conf.d/monitoring.cnf 2>/dev/null"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "cat ~/popping-server/mysql/my.cnf 2>/dev/null || docker exec mysql cat /etc/mysql/conf.d/monitoring.cnf 2>/dev/null"
 ```
 
 ### Enable Slow Query Log (requires user permission)
@@ -48,27 +48,27 @@ ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79
 **WARNING: Requires explicit user permission before running.**
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e \"SET GLOBAL slow_query_log = 'ON'; SET GLOBAL long_query_time = 1; SET GLOBAL slow_query_log_file = '/var/log/mysql/slow.log';\""
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e \"SET GLOBAL slow_query_log = 'ON'; SET GLOBAL long_query_time = 1; SET GLOBAL slow_query_log_file = '/var/log/mysql/slow.log';\""
 ```
 
-## Method 2: mysqld-exporter (port 9104)
+## Method 2: mysqld-exporter (`MYSQL_EXPORTER_PORT`)
 
 ### Top Slow Queries (by total time)
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "curl -s http://localhost:9104/metrics | grep 'mysql_perf_schema_events_statements_seconds_total' | sort -t' ' -k2 -rn | head -20"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "curl -s http://localhost:${MYSQL_EXPORTER_PORT}/metrics | grep 'mysql_perf_schema_events_statements_seconds_total' | sort -t' ' -k2 -rn | head -20"
 ```
 
 ### Query Digest Stats
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "curl -s http://localhost:9104/metrics | grep -E 'mysql_perf_schema_events_statements_(seconds_total|rows_examined_total|digest_text)' | head -40"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "curl -s http://localhost:${MYSQL_EXPORTER_PORT}/metrics | grep -E 'mysql_perf_schema_events_statements_(seconds_total|rows_examined_total|digest_text)' | head -40"
 ```
 
 ### Full Table Scan Detection
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e \"SELECT DIGEST_TEXT, COUNT_STAR, SUM_TIMER_WAIT/1000000000000 as total_sec, SUM_ROWS_EXAMINED, SUM_NO_INDEX_USED FROM performance_schema.events_statements_summary_by_digest WHERE SUM_NO_INDEX_USED > 0 ORDER BY SUM_TIMER_WAIT DESC LIMIT 10;\""
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e \"SELECT DIGEST_TEXT, COUNT_STAR, SUM_TIMER_WAIT/1000000000000 as total_sec, SUM_ROWS_EXAMINED, SUM_NO_INDEX_USED FROM performance_schema.events_statements_summary_by_digest WHERE SUM_NO_INDEX_USED > 0 ORDER BY SUM_TIMER_WAIT DESC LIMIT 10;\""
 ```
 
 ## Analysis Format

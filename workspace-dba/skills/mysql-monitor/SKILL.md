@@ -22,33 +22,33 @@ Deep MySQL analysis via SSH to EC2.
 - "락 확인", "데드락", "InnoDB 상태"
 - "버퍼풀", "인덱스 분석"
 
-## MySQL Metrics (mysqld-exporter — port 9104)
+## MySQL Metrics (mysqld-exporter — `MYSQL_EXPORTER_PORT`)
 
 ```bash
 # All key MySQL metrics at once
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "curl -s http://localhost:9104/metrics | grep -E '^mysql_global_(status|variables)_(threads_connected|max_connections|queries|slow_queries|innodb_buffer_pool_read|innodb_row_lock|threads_created|connections|table_locks_waited|aborted_connects)' | grep -v '#'"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "curl -s http://localhost:${MYSQL_EXPORTER_PORT}/metrics | grep -E '^mysql_global_(status|variables)_(threads_connected|max_connections|queries|slow_queries|innodb_buffer_pool_read|innodb_row_lock|threads_created|connections|table_locks_waited|aborted_connects)' | grep -v '#'"
 ```
 
 ## Deep Analysis Queries (via docker exec)
 
 ```bash
 # InnoDB status (deadlocks, lock waits)
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e 'SHOW ENGINE INNODB STATUS\G' 2>/dev/null | head -100"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e 'SHOW ENGINE INNODB STATUS\G' 2>/dev/null | head -100"
 
 # Current processlist (active queries)
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e 'SHOW FULL PROCESSLIST\G' 2>/dev/null"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e 'SHOW FULL PROCESSLIST\G' 2>/dev/null"
 
 # Top queries by execution time (performance_schema — cumulative)
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e \"SELECT DIGEST_TEXT, COUNT_STAR, ROUND(AVG_TIMER_WAIT/1000000000,2) as avg_ms, SUM_ROWS_EXAMINED, SUM_NO_INDEX_USED FROM performance_schema.events_statements_summary_by_digest ORDER BY AVG_TIMER_WAIT DESC LIMIT 10;\" 2>/dev/null"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e \"SELECT DIGEST_TEXT, COUNT_STAR, ROUND(AVG_TIMER_WAIT/1000000000,2) as avg_ms, SUM_ROWS_EXAMINED, SUM_NO_INDEX_USED FROM performance_schema.events_statements_summary_by_digest ORDER BY AVG_TIMER_WAIT DESC LIMIT 10;\" 2>/dev/null"
 
 # Table sizes
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e \"SELECT TABLE_NAME, ROUND(DATA_LENGTH/1024/1024,2) as data_mb, ROUND(INDEX_LENGTH/1024/1024,2) as index_mb, TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA='popping' ORDER BY DATA_LENGTH DESC LIMIT 15;\" 2>/dev/null"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e \"SELECT TABLE_NAME, ROUND(DATA_LENGTH/1024/1024,2) as data_mb, ROUND(INDEX_LENGTH/1024/1024,2) as index_mb, TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA='popping' ORDER BY DATA_LENGTH DESC LIMIT 15;\" 2>/dev/null"
 
 # Index usage stats
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e \"SELECT OBJECT_NAME, INDEX_NAME, COUNT_READ, COUNT_WRITE FROM performance_schema.table_io_waits_summary_by_index_usage WHERE OBJECT_SCHEMA='popping' ORDER BY COUNT_READ DESC LIMIT 20;\" 2>/dev/null"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e \"SELECT OBJECT_NAME, INDEX_NAME, COUNT_READ, COUNT_WRITE FROM performance_schema.table_io_waits_summary_by_index_usage WHERE OBJECT_SCHEMA='popping' ORDER BY COUNT_READ DESC LIMIT 20;\" 2>/dev/null"
 
 # EXPLAIN a specific query (replace QUERY)
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222 "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e 'EXPLAIN QUERY' 2>/dev/null"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "docker exec mysql mysql -u root -p\${MYSQL_ROOT_PASSWORD} -e 'EXPLAIN QUERY' 2>/dev/null"
 ```
 
 ## Report Format

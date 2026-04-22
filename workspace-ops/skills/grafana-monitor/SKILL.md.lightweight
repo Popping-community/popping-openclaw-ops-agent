@@ -27,22 +27,29 @@ SSH로 EC2에 접속하여 3개 exporter에서 메트릭을 수집한다.
 **항상 아래 명령어를 사용한다.** 개별 SSH 세션을 여러 번 열지 않는다.
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 -o ConnectTimeout=5 ec2-user@52.79.56.222 bash -c '
+EC2_HOST="${EC2_HOST:-52.79.56.222}"
+EC2_SSH_PORT="${EC2_SSH_PORT:-2222}"
+EC2_SSH_USER="${EC2_SSH_USER:-ec2-user}"
+APP_ACTUATOR_PORT="${APP_ACTUATOR_PORT:-8081}"
+NODE_EXPORTER_PORT="${NODE_EXPORTER_PORT:-9100}"
+MYSQL_EXPORTER_PORT="${MYSQL_EXPORTER_PORT:-9104}"
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" -o ConnectTimeout=5 "${EC2_SSH_USER}@${EC2_HOST}" \
+  "APP_ACTUATOR_PORT=${APP_ACTUATOR_PORT} NODE_EXPORTER_PORT=${NODE_EXPORTER_PORT} MYSQL_EXPORTER_PORT=${MYSQL_EXPORTER_PORT} bash -s" <<'REMOTE_SCRIPT'
 echo "=== ACTUATOR HEALTH ==="
-curl -s http://localhost:8081/actuator/health
+curl -s "http://localhost:${APP_ACTUATOR_PORT}/actuator/health"
 
 echo ""
 echo "=== SPRING BOOT METRICS ==="
-curl -s http://localhost:8081/actuator/prometheus | grep -E "^(http_server_requests_seconds_(count|sum)|tomcat_threads|hikaricp_connections_(active|max)|jvm_memory_(used|max)_bytes.*heap|jvm_gc_pause|cache_gets_total)" | grep -v "#"
+curl -s "http://localhost:${APP_ACTUATOR_PORT}/actuator/prometheus" | grep -E "^(http_server_requests_seconds_(count|sum)|tomcat_threads|hikaricp_connections_(active|max)|jvm_memory_(used|max)_bytes.*heap|jvm_gc_pause|cache_gets_total)" | grep -v "#"
 
 echo ""
 echo "=== NODE METRICS ==="
-curl -s http://localhost:9100/metrics | grep -E "^(node_memory_(MemAvailable|MemTotal|SwapFree|SwapTotal)_bytes |node_load(1|5|15) |node_filesystem_(avail|size)_bytes.*fstype=\"xfs\"|node_disk_io_time|node_network_(receive|transmit)_bytes_total.*eth0|node_time_seconds |node_boot_time_seconds |node_filefd)" | grep -v "#" | grep -v tmpfs
+curl -s "http://localhost:${NODE_EXPORTER_PORT}/metrics" | grep -E "^(node_memory_(MemAvailable|MemTotal|SwapFree|SwapTotal)_bytes |node_load(1|5|15) |node_filesystem_(avail|size)_bytes.*fstype=\"xfs\"|node_disk_io_time|node_network_(receive|transmit)_bytes_total.*eth0|node_time_seconds |node_boot_time_seconds |node_filefd)" | grep -v "#" | grep -v tmpfs
 
 echo ""
 echo "=== MYSQL METRICS ==="
-curl -s http://localhost:9104/metrics | grep -E "^mysql_global_(status_(threads_connected|queries|slow_queries|innodb_buffer_pool_read|innodb_row_lock|threads_created|connections|table_locks_waited|aborted_connects)|variables_max_connections) " | grep -v "#"
-'
+curl -s "http://localhost:${MYSQL_EXPORTER_PORT}/metrics" | grep -E "^mysql_global_(status_(threads_connected|queries|slow_queries|innodb_buffer_pool_read|innodb_row_lock|threads_created|connections|table_locks_waited|aborted_connects)|variables_max_connections) " | grep -v "#"
+REMOTE_SCRIPT
 ```
 
 ## 메트릭 해석

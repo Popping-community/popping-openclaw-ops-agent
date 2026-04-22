@@ -162,9 +162,9 @@ Before including any metric in a report, verify it is plausible:
 Every metric must include its source:
 
 ```
-- Memory: 92% (source: node-exporter:9100)
-- Heap: 31% (source: actuator:8081)
-- Connections: 11 (source: mysqld-exporter:9104)
+- Memory: 92% (source: node-exporter:${NODE_EXPORTER_PORT})
+- Heap: 31% (source: actuator:${APP_ACTUATOR_PORT})
+- Connections: 11 (source: mysqld-exporter:${MYSQL_EXPORTER_PORT})
 ```
 
 If source is unavailable, clearly state:

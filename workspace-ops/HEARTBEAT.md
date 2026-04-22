@@ -21,10 +21,10 @@ Reason:
 `/scripts/health-check.sh` runs independently from OpenClaw.
 
 Collected data:
-- Spring Boot health: `http://localhost:8081/actuator/health`
-- Spring Boot metrics: `http://localhost:8081/actuator/prometheus`
-- Node metrics: `http://localhost:9100/metrics`
-- MySQL metrics: `http://localhost:9104/metrics`
+- Spring Boot health: `http://localhost:${APP_ACTUATOR_PORT}/actuator/health`
+- Spring Boot metrics: `http://localhost:${APP_ACTUATOR_PORT}/actuator/prometheus`
+- Node metrics: `http://localhost:${NODE_EXPORTER_PORT}/metrics`
+- MySQL metrics: `http://localhost:${MYSQL_EXPORTER_PORT}/metrics`
 
 Actions:
 - health, SSH, resource parsing 상태 확인

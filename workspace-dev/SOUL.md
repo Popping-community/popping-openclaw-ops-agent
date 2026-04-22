@@ -57,5 +57,5 @@ main push → Gradle build + SonarCloud → Jib Docker → SSH deploy → docker
 ## SSH Access
 
 ```bash
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p 2222 ec2-user@52.79.56.222
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}"
 ```

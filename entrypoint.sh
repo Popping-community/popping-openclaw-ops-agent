@@ -3,6 +3,14 @@
 echo "=== PoppingOps Entrypoint ==="
 echo "Checking environment variables..."
 
+EC2_HOST="${EC2_HOST:-52.79.56.222}"
+EC2_SSH_PORT="${EC2_SSH_PORT:-2222}"
+EC2_SSH_USER="${EC2_SSH_USER:-ec2-user}"
+APP_ACTUATOR_PORT="${APP_ACTUATOR_PORT:-8081}"
+NODE_EXPORTER_PORT="${NODE_EXPORTER_PORT:-9100}"
+MYSQL_EXPORTER_PORT="${MYSQL_EXPORTER_PORT:-9104}"
+export EC2_HOST EC2_SSH_PORT EC2_SSH_USER APP_ACTUATOR_PORT NODE_EXPORTER_PORT MYSQL_EXPORTER_PORT
+
 wait_for_gateway() {
   local url="$1"
   local pid="$2"
@@ -62,12 +70,12 @@ echo "Setting up SSH key..."
 mkdir -p /root/.ssh
 echo "$SSH_PRIVATE_KEY" > /root/.ssh/ec2-key.pem
 chmod 600 /root/.ssh/ec2-key.pem
-ssh-keyscan -H -p 2222 52.79.56.222 >> /root/.ssh/known_hosts 2>/dev/null || true
+ssh-keyscan -H -p "$EC2_SSH_PORT" "$EC2_HOST" >> /root/.ssh/known_hosts 2>/dev/null || true
 echo "SSH key ready ($(wc -l < /root/.ssh/ec2-key.pem) lines)"
 
 # --- SSH Test ---
-echo "Testing SSH connection to EC2 (port 2222)..."
-ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p 2222 ec2-user@52.79.56.222 "echo SSH_OK" 2>&1
+echo "Testing SSH connection to EC2 (${EC2_SSH_USER}@${EC2_HOST}:${EC2_SSH_PORT})..."
+ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p "$EC2_SSH_PORT" "${EC2_SSH_USER}@${EC2_HOST}" "echo SSH_OK" 2>&1
 echo "SSH test done (exit code: $?)"
 
 # --- Inject secrets into openclaw.json ---

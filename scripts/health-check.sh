@@ -2,7 +2,12 @@
 # health-check.sh — OpenClaw 외부에서 동작하는 순수 bash 헬스체크
 # 정상 시 토큰 소비 0, 이상 시 Discord Webhook으로 알림
 
-SSH_CMD="ssh -i /root/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p 2222 ec2-user@52.79.56.222"
+EC2_HOST="${EC2_HOST:-52.79.56.222}"
+EC2_SSH_PORT="${EC2_SSH_PORT:-2222}"
+EC2_SSH_USER="${EC2_SSH_USER:-ec2-user}"
+APP_ACTUATOR_PORT="${APP_ACTUATOR_PORT:-8081}"
+NODE_EXPORTER_PORT="${NODE_EXPORTER_PORT:-9100}"
+MYSQL_EXPORTER_PORT="${MYSQL_EXPORTER_PORT:-9104}"
 WEBHOOK_URL="${DISCORD_WEBHOOK_URL:-}"
 CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL_SECONDS:-600}"  # 10분 (초)
 case "$CHECK_INTERVAL" in
@@ -19,6 +24,28 @@ SNAPSHOT_INTERVAL_MIN=$((CHECK_INTERVAL / 60))
 if [ "$SNAPSHOT_INTERVAL_MIN" -lt 1 ]; then
   SNAPSHOT_INTERVAL_MIN=1
 fi
+
+validate_port() {
+  local name="$1"
+  local value="$2"
+  local default="$3"
+
+  case "$value" in
+    ''|*[!0-9]*)
+      echo "WARNING: invalid ${name}='${value}', using ${default}" >&2
+      printf '%s' "$default"
+      ;;
+    *)
+      printf '%s' "$value"
+      ;;
+  esac
+}
+
+EC2_SSH_PORT=$(validate_port "EC2_SSH_PORT" "$EC2_SSH_PORT" "2222")
+APP_ACTUATOR_PORT=$(validate_port "APP_ACTUATOR_PORT" "$APP_ACTUATOR_PORT" "8081")
+NODE_EXPORTER_PORT=$(validate_port "NODE_EXPORTER_PORT" "$NODE_EXPORTER_PORT" "9100")
+MYSQL_EXPORTER_PORT=$(validate_port "MYSQL_EXPORTER_PORT" "$MYSQL_EXPORTER_PORT" "9104")
+
 CRITICAL_REMINDER_SECONDS=7200  # 2시간
 CRITICAL_REMINDER_CHECKS=3
 MONITOR_FAILURE_THRESHOLD=2
@@ -29,6 +56,15 @@ mkdir -p "$ALERT_STATE_DIR"
 
 log() {
   echo "$(date -u '+%Y-%m-%dT%H:%M:%S+00:00') [health-check] $*"
+}
+
+ssh_ec2() {
+  ssh -i /root/.ssh/ec2-key.pem \
+    -o StrictHostKeyChecking=no \
+    -o ConnectTimeout=10 \
+    -p "$EC2_SSH_PORT" \
+    "${EC2_SSH_USER}@${EC2_HOST}" \
+    "$@"
 }
 
 monitor_state_file() {
@@ -285,7 +321,7 @@ health_check() {
   log "Running health check..."
 
   local result
-  result=$($SSH_CMD "curl -sf http://localhost:8081/actuator/health | grep -q UP && echo HEALTHY || echo DOWN" 2>&1) || result="SSH_FAIL"
+  result=$(ssh_ec2 "curl -sf http://localhost:${APP_ACTUATOR_PORT}/actuator/health | grep -q UP && echo HEALTHY || echo DOWN" 2>&1) || result="SSH_FAIL"
 
   # SSH 배너/MOTD 등이 포함될 수 있으므로 마지막 줄만 확인
   local last_line
@@ -314,11 +350,11 @@ resource_check() {
   log "Running resource check..."
 
   local raw
-  raw=$($SSH_CMD 'bash -s' <<'REMOTE_SCRIPT'
-HEALTH=$(curl -sf http://localhost:8081/actuator/health | grep -c UP)
-APP_METRICS=$(curl -s http://localhost:8081/actuator/prometheus)
-NODE_METRICS=$(curl -s http://localhost:9100/metrics)
-MYSQL_METRICS=$(curl -s http://localhost:9104/metrics)
+  raw=$(ssh_ec2 "APP_ACTUATOR_PORT=${APP_ACTUATOR_PORT} NODE_EXPORTER_PORT=${NODE_EXPORTER_PORT} MYSQL_EXPORTER_PORT=${MYSQL_EXPORTER_PORT} bash -s" <<'REMOTE_SCRIPT'
+HEALTH=$(curl -sf "http://localhost:${APP_ACTUATOR_PORT}/actuator/health" | grep -c UP)
+APP_METRICS=$(curl -s "http://localhost:${APP_ACTUATOR_PORT}/actuator/prometheus")
+NODE_METRICS=$(curl -s "http://localhost:${NODE_EXPORTER_PORT}/metrics")
+MYSQL_METRICS=$(curl -s "http://localhost:${MYSQL_EXPORTER_PORT}/metrics")
 MEM_AVAIL=$(echo "$NODE_METRICS" | grep "^node_memory_MemAvailable_bytes " | awk '{print $2}')
 MEM_TOTAL=$(echo "$NODE_METRICS" | grep "^node_memory_MemTotal_bytes " | awk '{print $2}')
 SWAP_FREE=$(echo "$NODE_METRICS" | grep "^node_memory_SwapFree_bytes " | awk '{print $2}')
