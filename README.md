@@ -243,8 +243,9 @@ Dockerfile 기반으로 빌드되며, 컨테이너 시작 시 `entrypoint.sh`가
 2. SSH key 생성 및 EC2 접속 테스트
 3. `openclaw.json`에 secret 주입
 4. DBA/Dev 에이전트 등록 및 Discord account binding
-5. `health-check.sh`, `daily-summary-scheduler.sh`, `full-report-scheduler.sh` 백그라운드 실행
-6. OpenClaw Gateway 실행
+5. `health-check.sh` 백그라운드 실행
+6. OpenClaw Gateway 실행 및 HTTP readiness 확인
+7. Gateway 준비 완료 후 `daily-summary-scheduler.sh`, `full-report-scheduler.sh` 백그라운드 실행
 
 ## 주의사항
 

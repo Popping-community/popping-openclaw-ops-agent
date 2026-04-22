@@ -3,6 +3,35 @@
 echo "=== PoppingOps Entrypoint ==="
 echo "Checking environment variables..."
 
+wait_for_gateway() {
+  local url="$1"
+  local pid="$2"
+  local timeout="${GATEWAY_READY_TIMEOUT_SECONDS:-120}"
+  local elapsed=0
+  local http_code
+
+  echo "Waiting for OpenClaw Gateway readiness (${url}, timeout: ${timeout}s)..."
+  while [ "$elapsed" -lt "$timeout" ]; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "ERROR: OpenClaw Gateway exited before becoming ready"
+      return 1
+    fi
+
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" "${url}/" 2>/dev/null || true)
+    http_code="${http_code:-000}"
+    if [ "$http_code" != "000" ]; then
+      echo "OpenClaw Gateway is ready (http=${http_code})"
+      return 0
+    fi
+
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+
+  echo "ERROR: OpenClaw Gateway did not become ready within ${timeout}s"
+  return 1
+}
+
 # Check required env vars before starting any background processes.
 missing_required_env=0
 require_env() {
@@ -101,6 +130,20 @@ echo "Starting background health check..."
 HEALTH_CHECK_PID=$!
 echo "Health check started (PID: $HEALTH_CHECK_PID)"
 
+# --- Start Gateway ---
+GATEWAY_PORT="${PORT:-18789}"
+GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:${GATEWAY_PORT}}"
+echo "Starting OpenClaw Gateway on port $GATEWAY_PORT..."
+openclaw gateway --port "$GATEWAY_PORT" &
+GATEWAY_PID=$!
+
+if ! wait_for_gateway "$GATEWAY_URL" "$GATEWAY_PID"; then
+  echo "Gateway readiness failed, shutting down..."
+  kill $GATEWAY_PID $HEALTH_CHECK_PID 2>/dev/null || true
+  wait
+  exit 1
+fi
+
 # --- Start Daily Summary Scheduler (background) ---
 echo "Starting daily summary scheduler..."
 /scripts/daily-summary-scheduler.sh &
@@ -112,12 +155,6 @@ echo "Starting full report scheduler..."
 /scripts/full-report-scheduler.sh &
 FULL_REPORT_PID=$!
 echo "Full report scheduler started (PID: $FULL_REPORT_PID)"
-
-# --- Start Gateway ---
-GATEWAY_PORT="${PORT:-18789}"
-echo "Starting OpenClaw Gateway on port $GATEWAY_PORT..."
-openclaw gateway --port "$GATEWAY_PORT" &
-GATEWAY_PID=$!
 
 # 어느 한쪽이 죽으면 컨테이너 종료
 wait -n $GATEWAY_PID $HEALTH_CHECK_PID $DAILY_SUMMARY_PID $FULL_REPORT_PID 2>/dev/null
