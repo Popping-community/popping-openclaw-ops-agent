@@ -117,9 +117,12 @@ send_alert() {
   [ "$severity" = "CRITICAL" ] && emoji="🚨"
 
   local payload
-  payload=$(cat <<EOJSON
-{"content":"${emoji} **[${severity}]** ${message}"}
-EOJSON
+  payload=$(node - "$emoji" "$severity" "$message" <<'NODE'
+const [, , emoji, severity, message] = process.argv;
+process.stdout.write(JSON.stringify({
+  content: `${emoji} **[${severity}]** ${message}`
+}));
+NODE
 )
 
   curl -s -o /dev/null -w "%{http_code}" \
