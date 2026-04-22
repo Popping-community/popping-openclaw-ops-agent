@@ -347,7 +347,13 @@ MYSQL_MAX_CONN=$(echo "$MYSQL_METRICS" | awk '/^mysql_global_variables_max_conne
 MYSQL_QUERIES=$(echo "$MYSQL_METRICS" | awk '/^mysql_global_status_queries / {print $2; found=1} END {if (!found) print 0}')
 MYSQL_SLOW=$(echo "$MYSQL_METRICS" | awk '/^mysql_global_status_slow_queries / {print $2; found=1} END {if (!found) print 0}')
 MYSQL_TABLE_LOCKS_WAITED=$(echo "$MYSQL_METRICS" | awk '/^mysql_global_status_table_locks_waited / {print $2; found=1} END {if (!found) print 0}')
-echo "health=$HEALTH mem_avail=$MEM_AVAIL mem_total=$MEM_TOTAL swap_free=$SWAP_FREE swap_total=$SWAP_TOTAL load=$LOAD load5=$LOAD5 load15=$LOAD15 disk_avail=$DISK_AVAIL disk_total=$DISK_TOTAL node_time=$NODE_TIME node_boot=$NODE_BOOT net_rx=$NET_RX net_tx=$NET_TX tomcat_busy=$TOMCAT_BUSY tomcat_max=$TOMCAT_MAX hikari_active=$HIKARI_ACTIVE hikari_max=$HIKARI_MAX jvm_heap_used=$JVM_HEAP_USED jvm_heap_max=$JVM_HEAP_MAX gc_pause_sum=$GC_PAUSE_SUM http_count=$HTTP_COUNT http_sum=$HTTP_SUM http_5xx_count=$HTTP_5XX_COUNT mysql_connected=$MYSQL_CONNECTED mysql_max_conn=$MYSQL_MAX_CONN mysql_queries=$MYSQL_QUERIES mysql_slow=$MYSQL_SLOW mysql_table_locks_waited=$MYSQL_TABLE_LOCKS_WAITED"
+APP_METRICS_PRESENT=0
+NODE_METRICS_PRESENT=0
+MYSQL_METRICS_PRESENT=0
+[ -n "$APP_METRICS" ] && APP_METRICS_PRESENT=1
+[ -n "$NODE_METRICS" ] && NODE_METRICS_PRESENT=1
+[ -n "$MYSQL_METRICS" ] && MYSQL_METRICS_PRESENT=1
+echo "health=$HEALTH app_metrics_present=$APP_METRICS_PRESENT node_metrics_present=$NODE_METRICS_PRESENT mysql_metrics_present=$MYSQL_METRICS_PRESENT mem_avail=$MEM_AVAIL mem_total=$MEM_TOTAL swap_free=$SWAP_FREE swap_total=$SWAP_TOTAL load=$LOAD load5=$LOAD5 load15=$LOAD15 disk_avail=$DISK_AVAIL disk_total=$DISK_TOTAL node_time=$NODE_TIME node_boot=$NODE_BOOT net_rx=$NET_RX net_tx=$NET_TX tomcat_busy=$TOMCAT_BUSY tomcat_max=$TOMCAT_MAX hikari_active=$HIKARI_ACTIVE hikari_max=$HIKARI_MAX jvm_heap_used=$JVM_HEAP_USED jvm_heap_max=$JVM_HEAP_MAX gc_pause_sum=$GC_PAUSE_SUM http_count=$HTTP_COUNT http_sum=$HTTP_SUM http_5xx_count=$HTTP_5XX_COUNT mysql_connected=$MYSQL_CONNECTED mysql_max_conn=$MYSQL_MAX_CONN mysql_queries=$MYSQL_QUERIES mysql_slow=$MYSQL_SLOW mysql_table_locks_waited=$MYSQL_TABLE_LOCKS_WAITED"
 REMOTE_SCRIPT
 ) || {
     record_monitor_failure "resource_ssh" "resource SSH 수집" "EC2 SSH 또는 exporter curl 실패"
@@ -369,25 +375,27 @@ REMOTE_SCRIPT
     handle_state_change "resource_parse" "리소스 메트릭 파싱" "WARN" "FAIL" "리소스 메트릭 파싱 실패 — SSH 출력에서 데이터를 찾을 수 없음"
     return 1
   fi
-  record_monitor_success "resource_parse" "resource metric 파싱"
-  handle_state_change "resource_parse" "리소스 메트릭 파싱" "OK" "OK" ""
 
   # 파싱
+  local app_metrics_present node_metrics_present mysql_metrics_present
   local health mem_avail mem_total swap_free swap_total load load5 load15 disk_avail disk_total node_time node_boot net_rx net_tx
   local tomcat_busy tomcat_max hikari_active hikari_max jvm_heap_used jvm_heap_max gc_pause_sum
   local http_count http_sum http_5xx_count mysql_connected mysql_max_conn mysql_queries mysql_slow mysql_table_locks_waited
   health=$(echo "$metrics_line" | grep -oP 'health=\K[^ ]+' || echo "0")
-  mem_avail=$(echo "$metrics_line" | grep -oP 'mem_avail=\K[^ ]+' || echo "0")
-  mem_total=$(echo "$metrics_line" | grep -oP 'mem_total=\K[^ ]+' || echo "1")
+  app_metrics_present=$(echo "$metrics_line" | grep -oP 'app_metrics_present=\K[^ ]+' || echo "0")
+  node_metrics_present=$(echo "$metrics_line" | grep -oP 'node_metrics_present=\K[^ ]+' || echo "0")
+  mysql_metrics_present=$(echo "$metrics_line" | grep -oP 'mysql_metrics_present=\K[^ ]+' || echo "0")
+  mem_avail=$(echo "$metrics_line" | grep -oP 'mem_avail=\K[^ ]+' || echo "")
+  mem_total=$(echo "$metrics_line" | grep -oP 'mem_total=\K[^ ]+' || echo "")
   swap_free=$(echo "$metrics_line" | grep -oP 'swap_free=\K[^ ]+' || echo "0")
   swap_total=$(echo "$metrics_line" | grep -oP 'swap_total=\K[^ ]+' || echo "0")
-  load=$(echo "$metrics_line" | grep -oP 'load=\K[^ ]+' || echo "0")
+  load=$(echo "$metrics_line" | grep -oP 'load=\K[^ ]+' || echo "")
   load5=$(echo "$metrics_line" | grep -oP 'load5=\K[^ ]+' || echo "0")
   load15=$(echo "$metrics_line" | grep -oP 'load15=\K[^ ]+' || echo "0")
-  disk_avail=$(echo "$metrics_line" | grep -oP 'disk_avail=\K[^ ]+' || echo "0")
-  disk_total=$(echo "$metrics_line" | grep -oP 'disk_total=\K[^ ]+' || echo "1")
-  node_time=$(echo "$metrics_line" | grep -oP 'node_time=\K[^ ]+' || echo "0")
-  node_boot=$(echo "$metrics_line" | grep -oP 'node_boot=\K[^ ]+' || echo "0")
+  disk_avail=$(echo "$metrics_line" | grep -oP 'disk_avail=\K[^ ]+' || echo "")
+  disk_total=$(echo "$metrics_line" | grep -oP 'disk_total=\K[^ ]+' || echo "")
+  node_time=$(echo "$metrics_line" | grep -oP 'node_time=\K[^ ]+' || echo "")
+  node_boot=$(echo "$metrics_line" | grep -oP 'node_boot=\K[^ ]+' || echo "")
   net_rx=$(echo "$metrics_line" | grep -oP 'net_rx=\K[^ ]+' || echo "0")
   net_tx=$(echo "$metrics_line" | grep -oP 'net_tx=\K[^ ]+' || echo "0")
   tomcat_busy=$(echo "$metrics_line" | grep -oP 'tomcat_busy=\K[^ ]+' || echo "0")
@@ -405,6 +413,41 @@ REMOTE_SCRIPT
   mysql_queries=$(echo "$metrics_line" | grep -oP 'mysql_queries=\K[^ ]+' || echo "")
   mysql_slow=$(echo "$metrics_line" | grep -oP 'mysql_slow=\K[^ ]+' || echo "")
   mysql_table_locks_waited=$(echo "$metrics_line" | grep -oP 'mysql_table_locks_waited=\K[^ ]+' || echo "0")
+
+  local completeness_errors
+  completeness_errors=""
+  [ "$app_metrics_present" = "1" ] || completeness_errors="${completeness_errors} APP_METRICS"
+  [ "$node_metrics_present" = "1" ] || completeness_errors="${completeness_errors} NODE_METRICS"
+  [ "$mysql_metrics_present" = "1" ] || completeness_errors="${completeness_errors} MYSQL_METRICS"
+  [ -n "$mem_avail" ] || completeness_errors="${completeness_errors} MEM_AVAIL"
+  [ -n "$mem_total" ] || completeness_errors="${completeness_errors} MEM_TOTAL"
+  [ -n "$disk_avail" ] || completeness_errors="${completeness_errors} DISK_AVAIL"
+  [ -n "$disk_total" ] || completeness_errors="${completeness_errors} DISK_TOTAL"
+  [ -n "$load" ] || completeness_errors="${completeness_errors} LOAD"
+  [ -n "$node_time" ] || completeness_errors="${completeness_errors} NODE_TIME"
+  [ -n "$node_boot" ] || completeness_errors="${completeness_errors} NODE_BOOT"
+  [ -n "$http_count" ] || completeness_errors="${completeness_errors} HTTP_COUNT"
+  [ -n "$http_sum" ] || completeness_errors="${completeness_errors} HTTP_SUM"
+  [ -n "$mysql_queries" ] || completeness_errors="${completeness_errors} MYSQL_QUERIES"
+
+  if ! awk -v value="$mem_total" 'BEGIN { exit !(value + 0 > 0) }'; then
+    completeness_errors="${completeness_errors} MEM_TOTAL_NONPOSITIVE"
+  fi
+  if ! awk -v value="$disk_total" 'BEGIN { exit !(value + 0 > 0) }'; then
+    completeness_errors="${completeness_errors} DISK_TOTAL_NONPOSITIVE"
+  fi
+
+  if [ -n "$completeness_errors" ]; then
+    local detail
+    detail="missing or invalid core metrics:${completeness_errors}"
+    log "ERROR: Incomplete resource metrics (${detail})"
+    record_monitor_failure "resource_parse" "resource metric completeness" "$detail"
+    handle_state_change "resource_parse" "리소스 메트릭 파싱" "WARN" "FAIL" "리소스 메트릭 누락 — snapshot 갱신 중단 (${completeness_errors})"
+    return 1
+  fi
+
+  record_monitor_success "resource_parse" "resource metric 파싱"
+  handle_state_change "resource_parse" "리소스 메트릭 파싱" "OK" "OK" ""
 
   # Health 체크
   if [ "$health" = "0" ]; then
