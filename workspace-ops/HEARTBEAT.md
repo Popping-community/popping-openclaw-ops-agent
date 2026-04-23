@@ -14,6 +14,7 @@ HEARTBEAT_OK
 Reason:
 - `/scripts/health-check.sh` already refreshes `/tmp/health-check-alerts/status-current.env` every 30 minutes.
 - WARN/CRITICAL/recovery alerts are sent directly through `DISCORD_WEBHOOK_URL`.
+- Delivered WARN/CRITICAL alerts may trigger a separate non-blocking Gateway LLM recommendation follow-up.
 - Repeating the same WARN as an LLM report every 30 minutes wastes tokens and creates alert noise.
 
 ## External Bash Monitoring
@@ -37,6 +38,7 @@ Actions:
 - health SSH, resource SSH, resource parse, snapshot write 실패를 모니터링 파이프라인 장애로 별도 추적
 - 모니터링 파이프라인 실패가 2회 연속 발생하면 Webhook 알림
 - WARN/CRITICAL/복구 상태 변경 시 Webhook 알림
+- WARN/CRITICAL 알림 전송 성공 시 Gateway `/v1/responses` 기반 LLM 권장 조치 후속 메시지 전송
 - CRITICAL 지속 시 2시간 또는 3회 체크마다 Webhook 재알림
 
 Thresholds:
@@ -236,8 +238,9 @@ Daily Summary should not return `HEARTBEAT_OK`.
 
 ## Cost Boundary
 
-- 30분 자동 체크: `/scripts/health-check.sh`, LLM 사용 금지
-- 이상/복구 알림: Discord Webhook, LLM 사용 금지
+- 30분 자동 체크의 수집/임계값 판단: `/scripts/health-check.sh`, LLM 사용 금지
+- WARN/CRITICAL 알림 후 권장 조치: `/scripts/health-check.sh`가 Gateway `/v1/responses`로 LLM 사용 가능
+- 복구 알림: Discord Webhook, LLM 사용 금지
 - 사용자 요청: LLM 사용 가능
 - 6시간 Full Report: LLM 사용 가능
 - Daily Summary: LLM 사용 가능

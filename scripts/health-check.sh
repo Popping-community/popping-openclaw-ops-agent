@@ -53,6 +53,24 @@ fi
 CRITICAL_REMINDER_SECONDS=7200  # 2시간
 CRITICAL_REMINDER_CHECKS=3
 MONITOR_FAILURE_THRESHOLD=2
+GATEWAY_PORT="${PORT:-18789}"
+GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:${GATEWAY_PORT}}"
+LLM_RECOMMENDATION_MAX_ATTEMPTS="${LLM_RECOMMENDATION_MAX_ATTEMPTS:-6}"
+LLM_RECOMMENDATION_RETRY_SECONDS="${LLM_RECOMMENDATION_RETRY_SECONDS:-10}"
+
+case "$LLM_RECOMMENDATION_MAX_ATTEMPTS" in
+  ''|*[!0-9]*) LLM_RECOMMENDATION_MAX_ATTEMPTS=6 ;;
+esac
+if [ "$LLM_RECOMMENDATION_MAX_ATTEMPTS" -lt 1 ]; then
+  LLM_RECOMMENDATION_MAX_ATTEMPTS=1
+fi
+
+case "$LLM_RECOMMENDATION_RETRY_SECONDS" in
+  ''|*[!0-9]*) LLM_RECOMMENDATION_RETRY_SECONDS=10 ;;
+esac
+if [ "$LLM_RECOMMENDATION_RETRY_SECONDS" -lt 1 ]; then
+  LLM_RECOMMENDATION_RETRY_SECONDS=1
+fi
 
 # 중복 알림 방지용 (알림별 타임스탬프 저장 디렉토리)
 ALERT_STATE_DIR="/tmp/health-check-alerts"
@@ -60,6 +78,20 @@ mkdir -p "$ALERT_STATE_DIR"
 
 log() {
   echo "$(date -u '+%Y-%m-%dT%H:%M:%S+00:00') [health-check] $*"
+}
+
+gateway_token() {
+  if [ -n "${OPENCLAW_GATEWAY_TOKEN:-}" ]; then
+    printf '%s' "$OPENCLAW_GATEWAY_TOKEN"
+    return
+  fi
+
+  if [ -n "${GATEWAY_TOKEN:-}" ]; then
+    printf '%s' "$GATEWAY_TOKEN"
+    return
+  fi
+
+  node -e 'try { const c=require("/root/.openclaw/openclaw.json"); process.stdout.write(c.gateway?.auth?.token || ""); } catch (_) {}' 2>/dev/null
 }
 
 ssh_ec2() {
@@ -165,13 +197,186 @@ process.stdout.write(JSON.stringify({
 NODE
 )
 
-  curl -s -o /dev/null -w "%{http_code}" \
+  local http_code
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" \
     -H "Content-Type: application/json" \
     -d "$payload" \
-    "$WEBHOOK_URL" > /dev/null 2>&1 || log "Webhook send failed"
+    "$WEBHOOK_URL" 2>/dev/null)
+
+  if [ "$?" -ne 0 ]; then
+    http_code="000"
+  fi
+
+  case "$http_code" in
+    2*) ;;
+    *)
+      log "Webhook send failed (http=${http_code})"
+      return 1
+      ;;
+  esac
 
   date +%s > "$state_file"
   log "Alert sent: [$severity] $message"
+
+  if [ "$severity" = "WARN" ] || [ "$severity" = "CRITICAL" ]; then
+    send_llm_recommendation "$severity" "$message" &
+  fi
+}
+
+# LLM 기반 권장 조치를 후속 메시지로 전송 (백그라운드 실행)
+send_llm_recommendation() {
+  local severity="$1"
+  local alert_message="$2"
+
+  if [ -z "$WEBHOOK_URL" ]; then
+    return
+  fi
+
+  local token
+  token="$(gateway_token)"
+
+  if [ -z "$token" ]; then
+    log "LLM recommendation skipped: no gateway token"
+    return
+  fi
+
+  local snapshot_file payload_file response_file text_file
+  snapshot_file="${ALERT_STATE_DIR}/status-current.env"
+  payload_file=$(mktemp)
+  response_file=$(mktemp)
+  text_file=$(mktemp)
+
+  node - "$severity" "$alert_message" "$snapshot_file" > "$payload_file" <<'NODE'
+const fs = require("fs");
+const [, , severity, alertMessage, snapshotPath] = process.argv;
+let snapshot = "";
+try {
+  snapshot = fs.readFileSync(snapshotPath, "utf8");
+} catch (_) {}
+
+const input = [
+  `[${severity}] 알림이 발생했어: ${alertMessage}`,
+  "",
+  "아래는 현재 서버 snapshot이야.",
+  "이 알림에 대해 현재 서버 상태를 분석하고 구체적인 대응 조치를 Discord 메시지로 짧게 안내해줘.",
+  "runbook(docs/runbook.md)에 절차가 있으면 그걸 우선하고, 없으면 'runbook에 직접 절차 없음'이라고 밝힌 뒤 /root/.openclaw/docs/target-system.md의 실제 서버 환경/아키텍처와 현재 snapshot을 근거로 추론 기반 권장 조치를 제안해.",
+  "3~5줄 이내로 핵심만 작성해.",
+  "",
+  "Snapshot:",
+  snapshot || "(snapshot 없음)"
+].join("\n");
+
+process.stdout.write(JSON.stringify({
+  model: "openclaw:main",
+  user: "poppingops-alert-recommendation",
+  max_output_tokens: 500,
+  input
+}));
+NODE
+
+  local http_code attempt
+  attempt=1
+  while [ "$attempt" -le "$LLM_RECOMMENDATION_MAX_ATTEMPTS" ]; do
+    http_code=$(curl -s -o "$response_file" -w "%{http_code}" \
+      -H "Authorization: Bearer ${token}" \
+      -H "Content-Type: application/json" \
+      -H "x-openclaw-agent-id: main" \
+      -d @"$payload_file" \
+      "${GATEWAY_URL}/v1/responses" 2>/dev/null)
+
+    if [ "$?" -ne 0 ]; then
+      http_code="000"
+    fi
+
+    if [ "$http_code" = "200" ]; then
+      break
+    fi
+
+    if [ "$attempt" -lt "$LLM_RECOMMENDATION_MAX_ATTEMPTS" ]; then
+      log "LLM recommendation request failed (http=${http_code}, attempt=${attempt}/${LLM_RECOMMENDATION_MAX_ATTEMPTS}); retrying"
+      sleep "$LLM_RECOMMENDATION_RETRY_SECONDS"
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  if [ "$http_code" != "200" ]; then
+    log "LLM recommendation failed (http=${http_code})"
+    rm -f "$payload_file" "$response_file" "$text_file"
+    return
+  fi
+
+  # Gateway 응답에서 텍스트 추출
+  node - "$response_file" > "$text_file" <<'NODE'
+const fs = require("fs");
+const path = process.argv[2];
+let data;
+try {
+  data = JSON.parse(fs.readFileSync(path, "utf8"));
+} catch (e) {
+  process.exit(0);
+}
+const chunks = [];
+function walk(value) {
+  if (!value) return;
+  if (typeof value === "string") { chunks.push(value); return; }
+  if (Array.isArray(value)) { value.forEach(walk); return; }
+  if (typeof value !== "object") return;
+  if (typeof value.output_text === "string") chunks.push(value.output_text);
+  if ((value.type === "output_text" || value.type === "text") && typeof value.text === "string") chunks.push(value.text);
+  walk(value.output);
+  walk(value.content);
+  walk(value.choices);
+}
+if (typeof data.output_text === "string") chunks.push(data.output_text);
+walk(data.output);
+walk(data.choices);
+const seen = new Set();
+const result = chunks.map(c => String(c).trim()).filter(Boolean).filter(c => { if (seen.has(c)) return false; seen.add(c); return true; });
+process.stdout.write(result.join("\n").trim());
+NODE
+
+  if [ ! -s "$text_file" ]; then
+    log "LLM recommendation returned empty"
+    rm -f "$payload_file" "$response_file" "$text_file"
+    return
+  fi
+
+  # Discord Webhook으로 후속 메시지 전송
+  node - "$text_file" <<'NODE' | while IFS= read -r rec_payload; do
+const fs = require("fs");
+const path = process.argv[2];
+const text = fs.readFileSync(path, "utf8").trim();
+const prefix = "📋 **[권장 조치]** ";
+const max = 1900;
+
+if (!text) {
+  process.exit(0);
+}
+
+const message = `${prefix}${text}`;
+for (let i = 0; i < message.length; i += max) {
+  process.stdout.write(JSON.stringify({ content: message.slice(i, i + max) }) + "\n");
+}
+NODE
+    local rec_http_code
+    rec_http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+      -H "Content-Type: application/json" \
+      -d "$rec_payload" \
+      "$WEBHOOK_URL" 2>/dev/null)
+
+    if [ "$?" -ne 0 ]; then
+      rec_http_code="000"
+    fi
+
+    case "$rec_http_code" in
+      2*) ;;
+      *) log "LLM recommendation webhook send failed (http=${rec_http_code})" ;;
+    esac
+  done
+
+  log "LLM recommendation sent for: $alert_message"
+  rm -f "$payload_file" "$response_file" "$text_file"
 }
 
 get_metric_state() {

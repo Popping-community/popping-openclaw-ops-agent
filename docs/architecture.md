@@ -19,7 +19,8 @@ EC2 exporters / Spring Boot actuator
 `scripts/health-check.sh`가 Railway 컨테이너에서 백그라운드로 실행된다.
 10분마다 EC2에 SSH로 접속해 Spring Boot health, node-exporter, mysqld-exporter, actuator metrics를 수집한다.
 
-이 레이어는 LLM을 호출하지 않는다. 메모리, load, disk, 응답시간, 에러율 같은 임계값 판단과 상태 전이 감지는 bash에서 직접 처리한다.
+임계값 판단과 상태 전이 감지는 LLM 없이 bash에서 직접 처리한다.
+WARN/CRITICAL 알림이 실제 전송되면 백그라운드에서 Gateway `/v1/responses`를 호출해 LLM 기반 권장 조치를 후속 Discord 메시지로 보낸다. 이 호출은 알림 판단에 영향을 주지 않으며, 실패해도 1차 알림 자체에는 영향을 주지 않는다.
 
 주요 자동 판단 기준:
 
@@ -78,11 +79,12 @@ LLM이 사용되는 경로:
 | User request | Discord bot interaction | 최신 snapshot 또는 실시간 SSH gauge |
 | Full Report | `scripts/full-report-scheduler.sh` | `heartbeat-context.sh full-report` output |
 | Daily Summary | `scripts/daily-summary-scheduler.sh` | `heartbeat-context.sh daily-summary` output |
+| Alert recommendation | `health-check.sh` WARN/CRITICAL 알림 전송 성공 후 | 알림 메시지 + 현재 snapshot |
 
 `heartbeat-context.sh`는 snapshot age, freshness status, last_success age, GitHub Actions context를 deterministic하게 만든 뒤 LLM input으로 넘긴다.
 Full Report는 snapshot stale WARN/CRITICAL도 보고 필요 조건으로 본다.
 
-정기 health-check 자체는 이 레이어를 거치지 않는다.
+정기 health-check의 임계값 판단은 이 레이어를 거치지 않는다. 다만 WARN/CRITICAL 알림 전송 성공 시 권장 조치 생성을 위해 Gateway를 통해 LLM을 호출한다.
 
 ## Notification Layer
 
@@ -98,6 +100,8 @@ Webhook 알림 정책:
 | WARN 유지 | 반복 알림 억제 |
 | CRITICAL 유지 | 2시간 또는 3회 체크마다 재알림 |
 | WARN/CRITICAL -> OK | 복구 알림 전송 |
+
+WARN/CRITICAL 알림이 실제 전송되면 백그라운드에서 Gateway `/v1/responses`를 호출해 LLM 기반 권장 조치를 후속 Discord 메시지로 보낸다. 중복 억제된 알림과 복구 알림에는 LLM 권장 조치를 붙이지 않는다. 권장 조치 생성 실패는 알림 자체에 영향을 주지 않는다.
 
 알림은 두 종류로 분리한다.
 
@@ -125,12 +129,12 @@ snapshot이 오래됐으면 정상 수치처럼 보이더라도 freshness WARN/C
 
 핵심 경계는 수집/판단과 해석/대화의 분리다.
 
-- `health-check.sh`: 빠른 수집, 임계값 판단, snapshot 저장, webhook 알림
+- `health-check.sh`: 빠른 수집, 임계값 판단, snapshot 저장, webhook 알림, WARN/CRITICAL 시 LLM 권장 조치 후속 전송
 - `heartbeat-context.sh`: LLM에 넣을 deterministic context 생성
 - PoppingOps LLM: context 요약, 원인 후보 정리, 운영자용 설명
 - Discord bot: 사용자의 질문을 받아 적절한 에이전트와 분석 흐름으로 연결
 
-이 구조 덕분에 정상 상태의 반복 체크는 토큰을 쓰지 않고, 사람이 읽어야 하는 보고서에서만 LLM을 사용한다.
+이 구조 덕분에 정상 상태의 반복 체크는 토큰을 쓰지 않는다. LLM은 사용자 요청, Full Report, Daily Summary, 그리고 WARN/CRITICAL 알림 후 권장 조치 생성에서 사용한다.
 장애 대응 절차는 [runbook](runbook.md)에 분리되어 있다.
 모니터링 대상인 Popping-community 서버의 런타임 환경과 운영 해석 기준은 [target-system](target-system.md)에 분리되어 있다.
 

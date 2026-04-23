@@ -1,6 +1,6 @@
 # PoppingOps 운영 Runbook
 
-장애 알림이 왔을 때 먼저 확인할 절차를 정리한다. 자동 알림은 `scripts/health-check.sh`가 Discord Webhook으로 보낸다. 정기 체크는 LLM을 사용하지 않고, 사용자 요청/Full Report/Daily Summary에서만 LLM이 분석한다.
+장애 알림이 왔을 때 먼저 확인할 절차를 정리한다. 자동 알림은 `scripts/health-check.sh`가 Discord Webhook으로 보낸다. 정기 체크의 수집/임계값 판단은 LLM을 사용하지 않는다. WARN/CRITICAL 알림이 실제 전송되면 별도 백그라운드 Gateway 호출로 LLM 권장 조치가 후속 전송될 수 있다.
 
 ## 공통 확인
 
@@ -19,7 +19,7 @@ Runbook 명령은 아래 target 변수를 사용한다. 값은 Railway Variables
 
 ```bash
 railway logs > railway.log 2>&1
-grep -Ei "health-check|Running resource check|Rate metrics|Alert sent|Webhook send failed|Monitor" railway.log
+grep -Ei "health-check|Running resource check|Rate metrics|Alert sent|Webhook send failed|LLM recommendation|Monitor" railway.log
 ```
 
 최신 snapshot을 확인한다.
@@ -165,6 +165,7 @@ Railway service는 GitHub `main` branch와 연결되어 있고, `Wait for CI`가
 로그 예:
 
 - `Webhook send failed`
+- `Webhook send failed (http=...)`
 - `WEBHOOK_URL not set, skipping Discord alert`
 - `Fatal: required environment variables are missing; refusing to start`
 
@@ -190,6 +191,38 @@ curl -i -H "Content-Type: application/json" -d '{"content":"webhook test"}' "$DI
 railway variables set DISCORD_WEBHOOK_URL="새_WEBHOOK_URL"
 railway up
 ```
+
+## LLM 권장 조치 후속 메시지 누락 대응
+
+WARN/CRITICAL 알림은 먼저 Discord Webhook으로 전송되고, 전송 성공 후에만 LLM 권장 조치가 별도 백그라운드 작업으로 전송된다. 따라서 권장 조치가 없어도 1차 알림 자체가 성공했다면 감지 파이프라인은 동작한 것이다.
+
+로그 예:
+
+- `LLM recommendation skipped: no gateway token`
+- `LLM recommendation request failed (http=..., attempt=.../...); retrying`
+- `LLM recommendation failed (http=...)`
+- `LLM recommendation returned empty`
+- `LLM recommendation webhook send failed (http=...)`
+
+1. Gateway token 변수가 있는지 확인한다. 우선순위는 `OPENCLAW_GATEWAY_TOKEN`, `GATEWAY_TOKEN`, `/root/.openclaw/openclaw.json` 순서다.
+
+```bash
+railway variables | grep -E "OPENCLAW_GATEWAY_TOKEN|GATEWAY_TOKEN"
+```
+
+2. Gateway가 살아 있는지 확인한다.
+
+```bash
+curl -i "${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:${PORT:-18789}}/"
+```
+
+3. Gateway 요청 실패가 반복되면 Railway 로그에서 Gateway와 health-check 로그를 같이 본다.
+
+```bash
+grep -Ei "OpenClaw Gateway|LLM recommendation|health-check" railway.log
+```
+
+4. 권장 조치 Webhook 전송만 실패하면 `DISCORD_WEBHOOK_URL`을 Webhook 알림 실패 대응 절차로 점검한다.
 
 ## Snapshot Stale 대응
 

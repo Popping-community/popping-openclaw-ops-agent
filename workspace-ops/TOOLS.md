@@ -35,7 +35,8 @@ The automatic monitoring path is `/scripts/health-check.sh`:
 - It writes the latest snapshot to `/tmp/health-check-alerts/status-current.env`.
 - It writes successful snapshot update state to `/tmp/health-check-alerts/last_success.state`.
 - It calculates RPS, average response time, error rate, and MySQL QPS from counter deltas between snapshots.
-- It sends WARN/CRITICAL/recovery alerts directly through `DISCORD_WEBHOOK_URL` without LLM.
+- It sends WARN/CRITICAL/recovery alerts directly through `DISCORD_WEBHOOK_URL`.
+- After a WARN/CRITICAL alert is successfully delivered, it starts a non-blocking Gateway `/v1/responses` call and sends a short LLM recommendation follow-up. Recovery alerts do not trigger LLM recommendations.
 - It separately tracks health SSH, resource SSH, resource parse, and snapshot write failures; two consecutive failures trigger a monitoring-pipeline alert.
 
 Exporter sources:

@@ -23,10 +23,11 @@ Railway Container
 │   ├── PoppingDBA (dba)  → MySQL/InnoDB 분석
 │   └── PoppingDev (dev)  → CI/CD 분석
 │
-└── health-check.sh (백그라운드, LLM 미사용)
-    ├── 10분마다 health/resource 체크
+└── health-check.sh (백그라운드)
+    ├── 10분마다 health/resource 체크 (LLM 미사용)
     ├── /tmp/health-check-alerts/status-current.env snapshot 갱신
-    └── WARN/CRITICAL/복구 알림을 Discord Webhook으로 전송
+    ├── WARN/CRITICAL/복구 알림을 Discord Webhook으로 전송
+    └── WARN/CRITICAL 시 Gateway LLM 권장 조치 후속 전송
 ```
 
 ## 동작 방식
@@ -36,13 +37,13 @@ Railway Container
 `scripts/health-check.sh`가 Railway 컨테이너에서 백그라운드로 실행된다.
 10분마다 EC2에 SSH로 접속해 actuator, node-exporter, mysqld-exporter 메트릭을 수집한다.
 
-이 경로는 OpenClaw/LLM을 호출하지 않는다. 따라서 정기 체크와 Webhook 알림은 토큰 비용이 없다.
+임계값 판단과 Webhook 알림 자체는 LLM을 호출하지 않는다. WARN/CRITICAL 알림이 실제 전송되면 백그라운드에서 Gateway를 통해 LLM 기반 권장 조치를 후속 메시지로 보낸다.
 
 | 항목 | 주기 | 실행 주체 | LLM 사용 | 결과 |
 |------|------|-----------|----------|------|
 | Health Check | 10분 | `health-check.sh` | X | Spring Boot health, SSH 상태 확인 |
 | Resource Snapshot | 10분 | `health-check.sh` | X | 메모리, Load, 디스크, JVM, MySQL, RPS 등 갱신 |
-| 이상/복구 알림 | 상태 변경 시 | `health-check.sh` | X | Discord Webhook 알림 |
+| 이상/복구 알림 | 상태 변경 시 | `health-check.sh` | WARN/CRITICAL 시 | Discord Webhook 알림 + LLM 권장 조치 후속 전송 |
 | Full Report | 6시간 | `full-report-scheduler.sh` → `heartbeat-context.sh full-report` → 필요 시 Gateway `/v1/responses` | 조건부 | 새 이슈/심각도 상승/stale/CI 실패 중심의 압축 점검 |
 | Daily Summary | 매일 9AM KST | `daily-summary-scheduler.sh` → `heartbeat-context.sh daily-summary` → Gateway `/v1/responses` | O | 정상이어도 보고하는 일일 요약 |
 
@@ -136,6 +137,8 @@ CI/CD 및 배포 분석 담당 DevOps 에이전트.
 | CRITICAL 유지 | 2시간 또는 3회 체크마다 재알림 |
 | WARN/CRITICAL → OK | 복구 알림 전송 |
 
+WARN/CRITICAL 알림이 실제 전송되면 `health-check.sh`가 별도 백그라운드 작업으로 Gateway `/v1/responses`를 호출해 LLM 권장 조치를 후속 전송한다. 중복 억제된 알림과 복구 알림에는 LLM 권장 조치를 붙이지 않는다.
+
 모니터링 파이프라인 자체도 별도로 감시한다.
 
 | 항목 | 정책 |
@@ -223,7 +226,10 @@ Railway Variables에 설정한다.
 | `DISCORD_REPORT_WEBHOOK_URL` | 선택 | 리포트 전송용 공용 Webhook URL |
 | `GH_TOKEN` | 선택 | GitHub CLI 인증 토큰 |
 | `GATEWAY_TOKEN` | O | OpenClaw Gateway token |
-| `OPENCLAW_GATEWAY_TOKEN` | 선택 | OpenClaw Gateway token override. 설정 시 Daily Summary scheduler가 우선 사용 |
+| `OPENCLAW_GATEWAY_TOKEN` | 선택 | OpenClaw Gateway token override. 설정 시 Daily Summary scheduler와 health-check 권장 조치가 우선 사용 |
+| `OPENCLAW_GATEWAY_URL` | 선택 | OpenClaw Gateway URL override. 기본값 `http://127.0.0.1:${PORT:-18789}` |
+| `LLM_RECOMMENDATION_MAX_ATTEMPTS` | 선택 | health-check 권장 조치 Gateway 호출 재시도 횟수. 기본값 `6` |
+| `LLM_RECOMMENDATION_RETRY_SECONDS` | 선택 | health-check 권장 조치 Gateway 호출 재시도 간격. 기본값 `10` |
 | `EC2_HOST` | O | 모니터링 대상 EC2 host |
 | `EC2_SSH_PORT` | O | EC2 SSH port |
 | `EC2_SSH_USER` | O | EC2 SSH user |
@@ -260,4 +266,4 @@ Dockerfile 기반으로 빌드되며, 컨테이너 시작 시 `entrypoint.sh`가
 - `DISCORD_WEBHOOK_URL` 또는 `GATEWAY_TOKEN`이 없으면 운영 알림/리포트가 불완전해지므로 컨테이너 시작 단계에서 실패시킨다.
 - `/tmp/health-check-alerts`는 컨테이너 로컬 상태이므로 재시작 직후 첫 rate 계산은 `init`일 수 있다.
 - Prometheus 서버는 현재 사용하지 않는다. Rate 지표는 `health-check.sh`가 이전 snapshot과 현재 counter 차이로 계산한다.
-- 정기 이상 감지는 LLM 분석 없이 동작한다. LLM은 사용자 요청, Full Report, Daily Summary에서만 사용한다.
+- 정기 이상 감지의 임계값 판단은 LLM 없이 동작한다. WARN/CRITICAL 알림 전송 성공 시 권장 조치를 LLM이 후속 메시지로 보내며, 이 외에 LLM은 사용자 요청, Full Report, Daily Summary에서 사용한다.
