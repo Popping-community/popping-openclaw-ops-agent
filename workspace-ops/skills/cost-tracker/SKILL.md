@@ -39,9 +39,9 @@ Fireworks `/v1/usage` API는 존재하지 않는다. 실제 사용량은 **Firew
 
 ### 현재 구조 (외부 bash snapshot 분리 후)
 
-30분마다 실행되는 health/resource snapshot은 `/scripts/health-check.sh`가 OpenClaw 외부에서 실행한다.
+기본 10분마다 실행되는 health/resource snapshot은 `/scripts/health-check.sh`가 OpenClaw 외부에서 실행한다.
 **정기 체크의 수집/임계값 판단, Webhook 1차 알림, 복구 알림은 LLM을 사용하지 않으므로 토큰 비용이 0이다.**
-WARN/CRITICAL 알림이 실제 전송되면 별도 백그라운드 권장 조치를 후속 전송한다. `/root/.openclaw/config/runbook-recommendations.json`에 매칭되는 알림은 LLM 없이 권장 조치를 보내므로 토큰 비용이 0이고, 그 외 알림만 Gateway LLM fallback으로 추가 토큰 비용이 생긴다. Full Report와 Daily Summary는 보고서 작성 LLM 호출은 유지하지만 같은 JSON을 payload에 포함해 권장 조치 fallback을 줄인다.
+WARN/CRITICAL 알림이 실제 전송 성공한 경우에만 별도 백그라운드 권장 조치를 후속 전송한다. `/root/.openclaw/config/runbook-recommendations.json`에 `alert_key + severity`가 매칭되는 알림은 LLM 없이 권장 조치를 보내므로 토큰 비용이 0이고, 매칭이 없는 알림만 Gateway `/v1/responses` LLM fallback으로 추가 토큰 비용이 생긴다. Full Report와 Daily Summary는 보고서 작성 LLM 호출은 유지하지만 같은 JSON을 payload에 포함해 권장 조치 fallback을 줄인다.
 
 LLM을 사용하는 것은 아래 항목뿐:
 
@@ -63,10 +63,10 @@ LLM Heartbeat (OpenClaw):
 Heartbeat subtotal: ~$0.022/day (≈ 31원/일)
 
 Bash Heartbeat (외부 스크립트, LLM 미사용):
-- 30min Health Check: 48회/일 → 토큰 비용 $0
-- 30min Resource Snapshot: 48회/일 → 토큰 비용 $0
+- 10min Health Check: 144회/일 → 토큰 비용 $0
+- 10min Resource Snapshot: 144회/일 → 토큰 비용 $0
 - Webhook Alert/Recovery: 1차 알림/복구 → 토큰 비용 $0
-- Alert recommendation fallback: `/root/.openclaw/config/runbook-recommendations.json`에 없는 WARN/CRITICAL 알림 전송 성공 시에만 1 call × $0.0017
+- Alert recommendation fallback: `/root/.openclaw/config/runbook-recommendations.json`에 `alert_key + severity`가 매칭되지 않는 WARN/CRITICAL 알림 전송 성공 시에만 1 call × $0.0017
 
 User queries (estimated 5-10/day):
 - 10 queries × $0.004 = $0.04/day (≈ 55원/일)
@@ -102,6 +102,6 @@ Monthly estimated: ~$1.8/month (≈ 2,600원/월)
 ## Cost Optimization Tips
 
 Report these when costs exceed expectations:
-1. 30분 자동 체크와 Webhook 알림은 이미 외부 bash로 분리됨 (토큰 0) — 추가 절감 여지 적음
+1. 10분 자동 체크와 Webhook 알림은 이미 외부 bash로 분리됨 (토큰 0) — 추가 절감 여지 적음
 2. 긴 메트릭 출력을 grep으로 필터링해서 입력 토큰 절감
 3. 실제 비용 확인은 Fireworks 대시보드에서 할 것을 안내

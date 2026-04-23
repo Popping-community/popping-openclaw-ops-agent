@@ -1,6 +1,6 @@
 # PoppingOps 운영 Runbook
 
-장애 알림이 왔을 때 먼저 확인할 절차를 정리한다. 자동 알림은 `scripts/health-check.sh`가 Discord Webhook으로 보낸다. 정기 체크의 수집/임계값 판단은 LLM을 사용하지 않는다. WARN/CRITICAL 알림이 실제 전송되면 별도 백그라운드 작업으로 권장 조치가 후속 전송될 수 있다. runbook deterministic mapping에 있는 알림은 LLM 없이 권장 조치를 보내고, 그 외 알림만 Gateway LLM fallback을 사용한다.
+장애 알림이 왔을 때 먼저 확인할 절차를 정리한다. 자동 알림은 `scripts/health-check.sh`가 Discord Webhook으로 보내며, 정기 체크의 수집/임계값 판단은 LLM을 사용하지 않는다. 권장 조치 후속 메시지가 누락되면 아래 `권장 조치 후속 메시지 누락 대응` 절차를 따른다.
 
 ## 공통 확인
 
@@ -194,25 +194,9 @@ railway up
 
 ## 권장 조치 후속 메시지 누락 대응
 
-WARN/CRITICAL 알림은 먼저 Discord Webhook으로 전송되고, 전송 성공 후에만 권장 조치가 별도 백그라운드 작업으로 전송된다. 따라서 권장 조치가 없어도 1차 알림 자체가 성공했다면 감지 파이프라인은 동작한 것이다. runbook deterministic mapping에 있는 알림은 LLM 없이 권장 조치를 보내고, 그 외 알림만 LLM fallback을 사용한다.
+WARN/CRITICAL 알림은 먼저 Discord Webhook으로 전송되고, 전송 성공 후에만 권장 조치가 별도 백그라운드 작업으로 전송된다. 따라서 권장 조치가 없어도 1차 알림 자체가 성공했다면 감지 파이프라인은 동작한 것이다.
 
-구현 흐름:
-
-1. 1차 WARN/CRITICAL Webhook 알림을 먼저 보낸다.
-2. `config/runbook-recommendations.json`에서 `alert_key + severity` 매칭을 확인한다.
-3. 매칭되면 LLM 없이 deterministic 권장 조치를 보낸다.
-4. 매칭이 없으면 Gateway readiness를 기다린 뒤 Gateway `/v1/responses`로 LLM fallback을 호출한다.
-
-Runbook deterministic mapping:
-
-- memory WARN/CRITICAL
-- SSH CRITICAL
-- Spring Boot health CRITICAL
-- avg_response WARN/CRITICAL
-- error_rate WARN/CRITICAL
-- resource_parse WARN
-
-이 mapping은 `config/runbook-recommendations.json`에 구조화되어 있으며, `docs/runbook.md`의 절차를 알림 경로에서 안정적으로 쓰기 위한 실행용 source of truth다. `health-check.sh`, Full Report, Daily Summary는 이 JSON을 먼저 사용한다. `health-check.sh`는 Markdown 문서를 런타임에 파싱하지 않으므로, runbook 절차를 추가하거나 바꾸면 `docs/runbook.md`와 `config/runbook-recommendations.json`을 같이 갱신한다.
+권장 조치 기준은 `config/runbook-recommendations.json`이다. 이 파일에 `alert_key + severity`가 매칭되면 LLM 없이 권장 조치를 보내고, 매칭이 없을 때만 Gateway `/v1/responses` LLM fallback을 사용한다. `health-check.sh`는 Markdown runbook을 런타임에 파싱하지 않으므로, 자동 권장 조치 기준을 추가하거나 바꾸면 `docs/runbook.md`와 `config/runbook-recommendations.json`을 같이 갱신한다.
 
 로그 예:
 
@@ -227,25 +211,29 @@ Runbook deterministic mapping:
 - `LLM recommendation suppressed: agent failure response`
 - `Recommendation webhook send failed (http=...)`
 
-1. Gateway token 변수가 있는지 확인한다. 우선순위는 `OPENCLAW_GATEWAY_TOKEN`, `GATEWAY_TOKEN`, `/root/.openclaw/openclaw.json` 순서다.
+1. 1차 WARN/CRITICAL 알림이 실제로 전송됐는지 확인한다. 중복 억제된 알림과 복구 알림에는 권장 조치가 붙지 않는다.
+
+2. `Deterministic recommendation matched` 로그가 있는데 후속 메시지가 없으면 Webhook 전송 실패를 확인한다.
+
+3. `No deterministic recommendation matched` 로그가 있으면 Gateway fallback 경로를 확인한다. Gateway token 우선순위는 `OPENCLAW_GATEWAY_TOKEN`, `GATEWAY_TOKEN`, `/root/.openclaw/openclaw.json` 순서다.
 
 ```bash
 railway variables | grep -E "OPENCLAW_GATEWAY_TOKEN|GATEWAY_TOKEN"
 ```
 
-2. Gateway가 살아 있는지 확인한다.
+4. Gateway가 살아 있는지 확인한다.
 
 ```bash
 curl -i "${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:${PORT:-18789}}/"
 ```
 
-3. Gateway 요청 실패가 반복되면 Railway 로그에서 Gateway와 health-check 로그를 같이 본다.
+5. Gateway 요청 실패가 반복되면 Railway 로그에서 Gateway와 health-check 로그를 같이 본다.
 
 ```bash
 grep -Ei "OpenClaw Gateway|LLM recommendation|health-check" railway.log
 ```
 
-4. 권장 조치 Webhook 전송만 실패하면 `DISCORD_WEBHOOK_URL`을 Webhook 알림 실패 대응 절차로 점검한다.
+6. 권장 조치 Webhook 전송만 실패하면 `DISCORD_WEBHOOK_URL`을 Webhook 알림 실패 대응 절차로 점검한다.
 
 ## Snapshot Stale 대응
 

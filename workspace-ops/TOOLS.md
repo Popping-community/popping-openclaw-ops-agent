@@ -14,7 +14,7 @@ EC2 (`EC2_HOST`)
 │
 Railway (this bot)
 ├── OpenClaw Gateway + Discord bot
-├── health-check.sh → 30min snapshot + Webhook alerts
+├── health-check.sh → 10min snapshot + Webhook alerts
 ├── heartbeat-context.sh → Full Report/Daily Summary context
 ├── full-report-scheduler.sh → 6hr helper-first Gateway /v1/responses trigger
 ├── daily-summary-scheduler.sh → 9AM KST helper-first Gateway /v1/responses trigger
@@ -31,12 +31,12 @@ Railway (this bot)
 ## Monitoring (Direct Exporter Access via SSH)
 
 The automatic monitoring path is `/scripts/health-check.sh`:
-- Every 30 minutes it SSHes into EC2 and curls exporters directly.
+- Every 10 minutes by default it SSHes into EC2 and curls exporters directly.
 - It writes the latest snapshot to `/tmp/health-check-alerts/status-current.env`.
 - It writes successful snapshot update state to `/tmp/health-check-alerts/last_success.state`.
 - It calculates RPS, average response time, error rate, and MySQL QPS from counter deltas between snapshots.
 - It sends WARN/CRITICAL/recovery alerts directly through `DISCORD_WEBHOOK_URL`.
-- After a WARN/CRITICAL alert is successfully delivered, it sends a non-blocking recommendation follow-up. Alerts matching `/root/.openclaw/config/runbook-recommendations.json` use LLM-free recommendations; all other alerts call Gateway `/v1/responses` for an LLM fallback. Recovery alerts do not trigger recommendations. Full Report and Daily Summary also include the same JSON in the LLM payload and use it before fallback advice.
+- After a WARN/CRITICAL alert is successfully delivered, it sends a non-blocking recommendation follow-up. Alerts matching `/root/.openclaw/config/runbook-recommendations.json` by `alert_key + severity` use LLM-free recommendations; unmatched alerts call Gateway `/v1/responses` for an LLM fallback. Recovery alerts do not trigger recommendations. Full Report and Daily Summary also include the same JSON in the LLM payload and use it before fallback advice.
 - It separately tracks health SSH, resource SSH, resource parse, and snapshot write failures; two consecutive failures trigger a monitoring-pipeline alert.
 
 Exporter sources:
