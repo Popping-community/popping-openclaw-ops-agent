@@ -280,7 +280,7 @@ send_recommendation_text_file() {
 const fs = require("fs");
 const path = process.argv[2];
 const text = fs.readFileSync(path, "utf8").trim();
-const prefix = "📋 **[권장 조치]** ";
+const prefix = "📋 **권장 조치**\n\n";
 const max = 1900;
 
 if (!text) {
@@ -365,23 +365,71 @@ const recommendation = recommendationsData.recommendations.find((item) => {
 
 if (!recommendation) process.exit(2);
 
-const hasSnapshot = Object.keys(snapshot).length > 0;
-const metricBasis = Array.isArray(recommendation.basis_metrics)
-  ? recommendation.basis_metrics
-      .map((key) => `${key}=${value(key)}`)
-      .filter((entry) => !entry.endsWith("=NA"))
-      .join(" ")
-  : "";
-const basis = hasSnapshot
-  ? `근거: ${metricBasis || `alert_key=${alertKey} severity=${severity}`}`
-  : "근거: 현재 snapshot 없음";
+const metricLabels = {
+  memory_pct: { label: "메모리 사용률", unit: "%" },
+  jvm_heap_pct: { label: "JVM 힙 사용률", unit: "%" },
+  swap_pct: { label: "스왑 사용률", unit: "%" },
+  load1: { label: "Load1" },
+  snapshot_age_min: { label: "Snapshot 지연", unit: "분" },
+  monitor_last_success_age_min: { label: "최근 성공 이후", unit: "분" },
+  health: { label: "앱 상태" },
+  hikari_active: { label: "Hikari active" },
+  hikari_max: { label: "Hikari max" },
+  tomcat_busy: { label: "Tomcat busy" },
+  tomcat_max: { label: "Tomcat max" },
+  avg_response_sec: { label: "평균 응답시간", unit: "초" },
+  http_rps: { label: "HTTP RPS" },
+  rate_status_http_sum: { label: "응답시간 rate 상태" },
+  rate_status_http_count: { label: "요청수 rate 상태" },
+  error_rate_pct: { label: "에러율", unit: "%" },
+  http_5xx_delta: { label: "5xx 증가량" },
+  rate_status_http_5xx: { label: "5xx rate 상태" },
+  app_metrics_present: { label: "App metrics 존재" },
+  node_metrics_present: { label: "Node metrics 존재" },
+  mysql_metrics_present: { label: "MySQL metrics 존재" }
+};
+
+function formatMetricLine(key) {
+  const raw = value(key, "");
+  if (!raw) return "";
+
+  const spec = metricLabels[key] || {};
+  const label = spec.label || key;
+  if (spec.unit && /^-?\d+(?:\.\d+)?$/.test(raw)) {
+    return `${label}: ${raw}${spec.unit}`;
+  }
+
+  return `${label}: ${raw}`;
+}
+
+const metricLines = Array.isArray(recommendation.basis_metrics)
+  ? recommendation.basis_metrics.map((key) => formatMetricLine(key)).filter(Boolean)
+  : [];
 
 const lines = [
-  `${recommendation.title || `${alertKey} ${severity} 대응`}: ${basis}`,
-  recommendation.runbook_section ? `Runbook: ${recommendation.runbook_section}` : "",
-  ...((recommendation.immediate_checks || []).map((item) => `즉시 확인: ${item}`)),
-  ...((recommendation.operator_review_actions || []).map((item) => `운영자 검토: ${item}`))
-].filter(Boolean);
+  `**${recommendation.title || `${alertKey} ${severity} 대응`}**`
+];
+
+if (metricLines.length > 0) {
+  lines.push("", "**근거 지표**");
+  lines.push(...metricLines.map((item) => `- ${item}`));
+} else {
+  lines.push("", "**근거 지표**", "- 현재 snapshot 없음");
+}
+
+if (recommendation.runbook_section) {
+  lines.push("", "**Runbook**", `- ${recommendation.runbook_section}`);
+}
+
+if (Array.isArray(recommendation.immediate_checks) && recommendation.immediate_checks.length > 0) {
+  lines.push("", "**즉시 확인**");
+  lines.push(...recommendation.immediate_checks.map((item) => `- ${item}`));
+}
+
+if (Array.isArray(recommendation.operator_review_actions) && recommendation.operator_review_actions.length > 0) {
+  lines.push("", "**운영자 검토**");
+  lines.push(...recommendation.operator_review_actions.map((item) => `- ${item}`));
+}
 
 process.stdout.write(lines.join("\n"));
 NODE
