@@ -10,6 +10,7 @@ TARGET_HOUR_KST="${DAILY_SUMMARY_HOUR_KST:-09}"
 GATEWAY_PORT="${PORT:-18789}"
 GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:${GATEWAY_PORT}}"
 REPORT_WEBHOOK_URL="${DISCORD_DAILY_SUMMARY_WEBHOOK_URL:-${DISCORD_REPORT_WEBHOOK_URL:-${DISCORD_WEBHOOK_URL:-}}}"
+RUNBOOK_RECOMMENDATIONS_FILE="${RUNBOOK_RECOMMENDATIONS_FILE:-/root/.openclaw/config/runbook-recommendations.json}"
 
 mkdir -p "$STATE_DIR"
 
@@ -67,11 +68,29 @@ write_request_payload() {
   local file="$1"
   local context_file="$2"
 
-  node - "$context_file" > "$file" <<'NODE'
+  node - "$context_file" "$RUNBOOK_RECOMMENDATIONS_FILE" > "$file" <<'NODE'
 const fs = require("fs");
 const contextPath = process.argv[2];
+const recommendationsPath = process.argv[3];
 const context = fs.readFileSync(contextPath, "utf8");
-
+let recommendationData = {};
+try {
+  recommendationData = JSON.parse(fs.readFileSync(recommendationsPath, "utf8"));
+} catch (_) {
+  try {
+    recommendationData = JSON.parse(fs.readFileSync("config/runbook-recommendations.json", "utf8"));
+  } catch (_) {}
+}
+const runbookRecommendations = JSON.stringify(recommendationData && Object.keys(recommendationData).length ? recommendationData : {}, null, 2);
+const targetSystem = Array.isArray(recommendationData.target_system_summary)
+  ? recommendationData.target_system_summary.map((item) => `- ${item}`)
+  : [
+      "- Amazon Linux 2 single EC2",
+      "- 1 vCPU, about 952 MiB memory",
+      "- Docker Compose: Spring Boot app + MySQL",
+      "- Nginx reverse proxy",
+      "- Actuator/node-exporter/mysqld-exporter metrics"
+    ];
 const input = [
   "Daily Summary를 실행해줘.",
   "",
@@ -82,10 +101,21 @@ const input = [
   "- HEARTBEAT_OK를 반환하지 마.",
   "- 임의로 SSH raw metric을 다시 수집하지 말고 아래 context와 최신 snapshot을 우선해.",
   "- 측정시각, 데이터 상태, 트래픽 지표 기준을 포함해.",
-  "- 오늘의 조치는 runbook을 우선하고, runbook에 직접 절차가 없으면 target-system 문서의 실제 서버 환경/아키텍처와 현재 snapshot/realtime metric 기반의 추론 기반 권장 조치를 제안해.",
+  "- 오늘의 조치는 runbook을 우선하고, runbook에 직접 절차가 없으면 아래 Target system 요약과 현재 snapshot/realtime metric만 근거로 추론 기반 권장 조치를 제안해.",
+  "- 없는 정보는 단정하지 말고 확인 항목으로 분리해. 상태 변경 작업은 운영자가 검토할 조치로만 제안해.",
   "- github_actions_available=true이면 CI/CD를 수집 제외라고 쓰지 말고 github_actions_runs_json을 요약해.",
   "- github_actions_available=false일 때만 github_actions_unavailable 값을 근거로 수집 제외/수집 실패를 명시해.",
   "- 데이터가 없으면 추측하지 말고 수집 제외/수집 실패를 명시해.",
+  "",
+  "- Recommendation actions must first match issues against Runbook recommendation data by `alert_key` and `severities`.",
+  "- If a recommendation matches, summarize its `immediate_checks` and `operator_review_actions` and do not mix in target-system fallback speculation.",
+  "- Use Target system + current context fallback only for issues with no matching recommendation.",
+  "",
+  "Runbook recommendation data:",
+  runbookRecommendations,
+  "",
+  "Target system:",
+  ...targetSystem,
   "",
   "Context:",
   context

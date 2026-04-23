@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "description": "Executable runbook recommendation data used before LLM fallback.",
+  "target_system_summary": [
+    "Amazon Linux 2 single EC2",
+    "1 vCPU, about 952 MiB memory",
+    "Docker Compose: Spring Boot app + MySQL",
+    "Nginx reverse proxy",
+    "Actuator/node-exporter/mysqld-exporter metrics"
+  ],
+  "recommendations": [
+    {
+      "id": "memory_warn",
+      "alert_key": "memory",
+      "severities": ["WARN"],
+      "runbook_section": "메모리 WARN 대응",
+      "title": "메모리 WARN 대응",
+      "basis_metrics": ["memory_pct", "jvm_heap_pct", "swap_pct", "load1"],
+      "immediate_checks": [
+        "JVM heap만 보지 말고 system memory, Docker, MySQL, swap 사용률을 함께 확인한다.",
+        "`free -m`, `docker stats --no-stream`, `ps aux --sort=-%mem | head`로 메모리 상위 프로세스를 확인한다.",
+        "최근 app log에서 OOM, GC 압박, 대량 요청 또는 배치 작업 흔적을 확인한다."
+      ],
+      "operator_review_actions": [
+        "WARN이 지속되거나 OOM 징후가 있으면 원인 프로세스 정리, 메모리 설정 조정, 서비스 재시작을 검토한다."
+      ]
+    },
+    {
+      "id": "memory_critical",
+      "alert_key": "memory",
+      "severities": ["CRITICAL"],
+      "runbook_section": "메모리 CRITICAL 대응",
+      "title": "메모리 CRITICAL 대응",
+      "basis_metrics": ["memory_pct", "jvm_heap_pct", "swap_pct", "load1"],
+      "immediate_checks": [
+        "EC2 메모리 상태와 OOM 흔적을 즉시 확인한다.",
+        "`free -m`, `dmesg -T | grep -Ei 'oom|killed process|out of memory'`, `docker stats --no-stream` 결과를 확인한다.",
+        "JVM heap이 정상인데 system memory만 높으면 MySQL, Docker, OS cache, 다른 프로세스를 함께 확인한다."
+      ],
+      "operator_review_actions": [
+        "서비스 영향이 있으면 원인 확인 후 애플리케이션 재시작, 배포 rollback, 메모리 설정 조정을 검토한다."
+      ]
+    },
+    {
+      "id": "ssh_critical",
+      "alert_key": "ssh",
+      "severities": ["CRITICAL"],
+      "runbook_section": "SSH 실패 대응",
+      "title": "SSH/모니터링 연결 CRITICAL 대응",
+      "basis_metrics": ["snapshot_age_min", "monitor_last_success_age_min"],
+      "immediate_checks": [
+        "EC2 인스턴스 상태, Security Group inbound SSH port, sshd 상태를 확인한다.",
+        "Railway `SSH_PRIVATE_KEY`, `EC2_HOST`, `EC2_SSH_PORT`, `EC2_SSH_USER` 값이 변경되었는지 확인한다.",
+        "snapshot이 오래되었으면 `last_success.state`와 health-check 로그를 함께 확인한다."
+      ],
+      "operator_review_actions": [
+        "EC2 IP/port 변경, key rotation, network 정책 변경 여부를 확인한 뒤 변수 교체나 재배포를 검토한다."
+      ]
+    },
+    {
+      "id": "app_health_critical",
+      "alert_key": "app_health",
+      "severities": ["CRITICAL"],
+      "runbook_section": "Spring Boot Health DOWN 대응",
+      "title": "Spring Boot Health CRITICAL 대응",
+      "basis_metrics": ["health", "hikari_active", "hikari_max", "tomcat_busy", "tomcat_max"],
+      "immediate_checks": [
+        "Actuator `/health`, `docker ps`, app container log, port listen 상태를 확인한다.",
+        "DB 연결 문제가 의심되면 MySQL container 상태와 connection 수를 함께 확인한다.",
+        "최근 배포 직후라면 GitHub Actions와 Railway 배포 로그를 함께 확인한다."
+      ],
+      "operator_review_actions": [
+        "서비스 영향이 있으면 원인 확인 후 재시작, rollback, 설정 복구를 검토한다."
+      ]
+    },
+    {
+      "id": "avg_response_warn_critical",
+      "alert_key": "avg_response",
+      "severities": ["WARN", "CRITICAL"],
+      "runbook_section": "트래픽 알림 대응",
+      "title": "평균 응답시간 대응",
+      "basis_metrics": ["avg_response_sec", "http_rps", "rate_status_http_sum", "rate_status_http_count"],
+      "immediate_checks": [
+        "App log, slow query, DB lock, Hikari/Tomcat 사용률, 최근 요청 증가 여부를 확인한다.",
+        "rate status가 init/missing/reset이면 응답시간 수치를 단정하지 말고 다음 snapshot과 교차 확인한다.",
+        "최근 배포 또는 외부 API/DB 지연이 있었는지 확인한다."
+      ],
+      "operator_review_actions": [
+        "병목 원인이 확인된 뒤 DB query 개선, pool 조정, 배포 rollback, scale 조치를 검토한다."
+      ]
+    },
+    {
+      "id": "error_rate_warn_critical",
+      "alert_key": "error_rate",
+      "severities": ["WARN", "CRITICAL"],
+      "runbook_section": "트래픽 알림 대응",
+      "title": "HTTP 에러율 대응",
+      "basis_metrics": ["error_rate_pct", "http_5xx_delta", "rate_status_http_5xx"],
+      "immediate_checks": [
+        "최근 5xx/exception log, 배포 시각, 외부 API/DB 연결 오류, Nginx/app log를 함께 확인한다.",
+        "rate status가 init/missing/reset이면 error rate를 단정하지 말고 다음 snapshot과 교차 확인한다.",
+        "특정 endpoint나 배포 이후에만 발생하는지 확인한다."
+      ],
+      "operator_review_actions": [
+        "영향 범위가 크면 원인 배포 rollback, 설정 복구, 서비스 재시작을 검토한다."
+      ]
+    },
+    {
+      "id": "resource_parse_warn",
+      "alert_key": "resource_parse",
+      "severities": ["WARN"],
+      "runbook_section": "권장 조치 후속 메시지 누락 대응",
+      "title": "리소스 메트릭 파싱 WARN 대응",
+      "basis_metrics": ["app_metrics_present", "node_metrics_present", "mysql_metrics_present"],
+      "immediate_checks": [
+        "Actuator prometheus, node-exporter, mysqld-exporter 응답과 SSH 출력에 metrics line이 있는지 확인한다.",
+        "불완전한 metric은 snapshot 갱신을 중단하므로 stale 경고가 뒤따를 수 있다.",
+        "health-check 로그에서 raw metrics와 completeness error를 확인한다."
+      ],
+      "operator_review_actions": [
+        "Exporter/container 재시작, port/target variable 변경, parser 수정 필요 여부를 검토한다."
+      ]
+    }
+  ]
+}

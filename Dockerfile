@@ -17,6 +17,7 @@ COPY workspace-ops/ /root/.openclaw/workspace/
 COPY workspace-dba/ /root/.openclaw/workspace-dba/
 COPY workspace-dev/ /root/.openclaw/workspace-dev/
 COPY docs/ /root/.openclaw/docs/
+COPY config/ /root/.openclaw/config/
 COPY openclaw.json /root/.openclaw/openclaw.json
 
 # Copy health check scripts

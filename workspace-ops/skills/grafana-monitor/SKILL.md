@@ -145,8 +145,9 @@ Report both timestamps:
 - If the snapshot is missing, stale, or has `rate_status_* != ok`, clearly report the affected metric as unavailable.
 - Counter totals are cumulative. Rate metrics are interval values from snapshot delta calculation.
 - Recommended actions must be runbook-first. Use `/root/.openclaw/docs/runbook.md` when WARN/CRITICAL status appears or the user asks what to do next.
+- Apply the Runbook Mapping table deterministically first. If a condition matches, provide that runbook-based guidance and do not mix in target-system fallback speculation.
 - Runbook-based recommendations are guidance, not automatic actions. Do not execute restart, config changes, deploy, or write operations unless the user explicitly approves.
-- If no runbook section matches, clearly separate fallback advice under `추론 기반 권장 조치` and base it on `/root/.openclaw/docs/target-system.md` plus the current server metrics.
+- Use fallback only if no runbook section matches. If no runbook section matches, clearly separate fallback advice under `추론 기반 권장 조치` and base it only on the provided Target system summary plus the current server metrics.
 
 ## Severity Thresholds
 
@@ -179,7 +180,7 @@ Overall severity = highest individual severity.
 
 Fallback rules:
 - If no runbook section matches the issue, say `runbook에 직접 절차 없음`.
-- Then provide `추론 기반 권장 조치`, based on `/root/.openclaw/docs/target-system.md` and the current snapshot/realtime metrics.
+- Then provide `추론 기반 권장 조치`, based only on the provided Target system summary and the current snapshot/realtime metrics.
 - Split fallback recommendations into `즉시 확인할 조치` and `운영자가 검토할 조치`.
 - Immediate checks must stay read-only: logs, metrics, status checks, timestamp checks, cross-validation.
 - Operator-reviewed actions may include restart, config changes, deploy, Nginx reload, TLS certificate renewal, Security Group review, or pool tuning, but do not execute them.

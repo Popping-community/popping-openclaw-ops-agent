@@ -41,14 +41,14 @@ Fireworks `/v1/usage` API는 존재하지 않는다. 실제 사용량은 **Firew
 
 30분마다 실행되는 health/resource snapshot은 `/scripts/health-check.sh`가 OpenClaw 외부에서 실행한다.
 **정기 체크의 수집/임계값 판단, Webhook 1차 알림, 복구 알림은 LLM을 사용하지 않으므로 토큰 비용이 0이다.**
-WARN/CRITICAL 알림이 실제 전송되면 별도 백그라운드 Gateway 호출로 LLM 권장 조치를 후속 전송하므로, 이상 상태가 새로 발생하거나 CRITICAL 재알림이 전송될 때만 추가 토큰 비용이 생긴다.
+WARN/CRITICAL 알림이 실제 전송되면 별도 백그라운드 권장 조치를 후속 전송한다. `/root/.openclaw/config/runbook-recommendations.json`에 매칭되는 알림은 LLM 없이 권장 조치를 보내므로 토큰 비용이 0이고, 그 외 알림만 Gateway LLM fallback으로 추가 토큰 비용이 생긴다. Full Report와 Daily Summary는 보고서 작성 LLM 호출은 유지하지만 같은 JSON을 payload에 포함해 권장 조치 fallback을 줄인다.
 
 LLM을 사용하는 것은 아래 항목뿐:
 
 Per interaction estimate:
 - 6hr Full Report: ~3,000 input + ~1,500 output = ~4,500 tokens ≈ $0.0042 (≈ 6원)
 - Daily 9AM Summary: ~3,000 input + ~2,000 output = ~5,000 tokens ≈ $0.0050 (≈ 7원)
-- Alert recommendation: ~1,500 input + ~500 output = ~2,000 tokens ≈ $0.0017 (≈ 2.5원)
+- Alert recommendation fallback: ~1,500 input + ~500 output = ~2,000 tokens ≈ $0.0017 (≈ 2.5원)
 - Snapshot server status query: ~2,000 input + ~1,000 output = ~3,000 tokens ≈ $0.0028 (≈ 4원)
 - Realtime server status query: ~3,000 input + ~2,000 output = ~5,000 tokens ≈ $0.0045 (≈ 6.5원)
 - User query (simple): ~2,000 input + ~1,000 output = ~3,000 tokens ≈ $0.0028 (≈ 4원)
@@ -66,7 +66,7 @@ Bash Heartbeat (외부 스크립트, LLM 미사용):
 - 30min Health Check: 48회/일 → 토큰 비용 $0
 - 30min Resource Snapshot: 48회/일 → 토큰 비용 $0
 - Webhook Alert/Recovery: 1차 알림/복구 → 토큰 비용 $0
-- Alert recommendation: WARN/CRITICAL 알림 전송 성공 시에만 1 call × $0.0017
+- Alert recommendation fallback: `/root/.openclaw/config/runbook-recommendations.json`에 없는 WARN/CRITICAL 알림 전송 성공 시에만 1 call × $0.0017
 
 User queries (estimated 5-10/day):
 - 10 queries × $0.004 = $0.04/day (≈ 55원/일)

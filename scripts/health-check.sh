@@ -57,6 +57,8 @@ GATEWAY_PORT="${PORT:-18789}"
 GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:${GATEWAY_PORT}}"
 LLM_RECOMMENDATION_MAX_ATTEMPTS="${LLM_RECOMMENDATION_MAX_ATTEMPTS:-6}"
 LLM_RECOMMENDATION_RETRY_SECONDS="${LLM_RECOMMENDATION_RETRY_SECONDS:-10}"
+LLM_RECOMMENDATION_GATEWAY_READY_TIMEOUT_SECONDS="${LLM_RECOMMENDATION_GATEWAY_READY_TIMEOUT_SECONDS:-${GATEWAY_READY_TIMEOUT_SECONDS:-120}}"
+RUNBOOK_RECOMMENDATIONS_FILE="${RUNBOOK_RECOMMENDATIONS_FILE:-/root/.openclaw/config/runbook-recommendations.json}"
 
 case "$LLM_RECOMMENDATION_MAX_ATTEMPTS" in
   ''|*[!0-9]*) LLM_RECOMMENDATION_MAX_ATTEMPTS=6 ;;
@@ -70,6 +72,13 @@ case "$LLM_RECOMMENDATION_RETRY_SECONDS" in
 esac
 if [ "$LLM_RECOMMENDATION_RETRY_SECONDS" -lt 1 ]; then
   LLM_RECOMMENDATION_RETRY_SECONDS=1
+fi
+
+case "$LLM_RECOMMENDATION_GATEWAY_READY_TIMEOUT_SECONDS" in
+  ''|*[!0-9]*) LLM_RECOMMENDATION_GATEWAY_READY_TIMEOUT_SECONDS=120 ;;
+esac
+if [ "$LLM_RECOMMENDATION_GATEWAY_READY_TIMEOUT_SECONDS" -lt 1 ]; then
+  LLM_RECOMMENDATION_GATEWAY_READY_TIMEOUT_SECONDS=1
 fi
 
 # 중복 알림 방지용 (알림별 타임스탬프 저장 디렉토리)
@@ -92,6 +101,34 @@ gateway_token() {
   fi
 
   node -e 'try { const c=require("/root/.openclaw/openclaw.json"); process.stdout.write(c.gateway?.auth?.token || ""); } catch (_) {}' 2>/dev/null
+}
+
+wait_for_gateway_ready() {
+  local timeout="$LLM_RECOMMENDATION_GATEWAY_READY_TIMEOUT_SECONDS"
+  local elapsed=0
+  local http_code
+
+  while [ "$elapsed" -lt "$timeout" ]; do
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" "${GATEWAY_URL}/" 2>/dev/null || true)
+    http_code="${http_code:-000}"
+
+    if [ "$http_code" != "000" ]; then
+      if [ "$elapsed" -gt 0 ]; then
+        log "Gateway ready for LLM recommendation (http=${http_code}, waited=${elapsed}s)"
+      fi
+      return 0
+    fi
+
+    if [ "$elapsed" -eq 0 ]; then
+      log "LLM recommendation waiting for Gateway readiness (${GATEWAY_URL}, timeout=${timeout}s)"
+    fi
+
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+
+  log "LLM recommendation skipped: gateway not ready after ${timeout}s"
+  return 1
 }
 
 ssh_ec2() {
@@ -125,6 +162,17 @@ record_monitor_success() {
   log "Monitor ${label}: OK"
 }
 
+monitor_recommendation_key() {
+  local key="$1"
+
+  case "$key" in
+    health_ssh|resource_ssh) echo "ssh" ;;
+    resource_parse) echo "resource_parse" ;;
+    snapshot_write) echo "snapshot_write" ;;
+    *) echo "$key" ;;
+  esac
+}
+
 record_monitor_failure() {
   local key="$1"
   local label="$2"
@@ -142,7 +190,7 @@ record_monitor_failure() {
   echo "${count}|${first_failed_at}|${detail}" > "$file"
 
   if [ "$count" -eq "$MONITOR_FAILURE_THRESHOLD" ]; then
-    send_alert "WARN" "모니터링 장애 — ${label} 연속 ${count}회 실패 (${detail})"
+    send_alert "WARN" "모니터링 장애 — ${label} 연속 ${count}회 실패 (${detail})" "$(monitor_recommendation_key "$key")"
   elif [ "$count" -gt "$MONITOR_FAILURE_THRESHOLD" ]; then
     log "Monitor ${label}: still failing (${count} consecutive, ${detail})"
   else
@@ -164,6 +212,7 @@ record_snapshot_success() {
 send_alert() {
   local severity="$1"
   local message="$2"
+  local alert_key="${3:-}"
 
   if [ -z "$WEBHOOK_URL" ]; then
     log "WEBHOOK_URL not set, skipping Discord alert"
@@ -219,14 +268,154 @@ NODE
   log "Alert sent: [$severity] $message"
 
   if [ "$severity" = "WARN" ] || [ "$severity" = "CRITICAL" ]; then
-    send_llm_recommendation "$severity" "$message" &
+    send_alert_recommendation "$severity" "$message" "$alert_key" &
   fi
 }
 
-# LLM 기반 권장 조치를 후속 메시지로 전송 (백그라운드 실행)
+send_recommendation_text_file() {
+  local alert_message="$1"
+  local text_file="$2"
+
+  node - "$text_file" <<'NODE' | while IFS= read -r rec_payload; do
+const fs = require("fs");
+const path = process.argv[2];
+const text = fs.readFileSync(path, "utf8").trim();
+const prefix = "📋 **[권장 조치]** ";
+const max = 1900;
+
+if (!text) {
+  process.exit(0);
+}
+
+const message = `${prefix}${text}`;
+for (let i = 0; i < message.length; i += max) {
+  process.stdout.write(JSON.stringify({ content: message.slice(i, i + max) }) + "\n");
+}
+NODE
+    local rec_http_code
+    rec_http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+      -H "Content-Type: application/json" \
+      -d "$rec_payload" \
+      "$WEBHOOK_URL" 2>/dev/null)
+
+    if [ "$?" -ne 0 ]; then
+      rec_http_code="000"
+    fi
+
+    case "$rec_http_code" in
+      2*) ;;
+      *) log "Recommendation webhook send failed (http=${rec_http_code})" ;;
+    esac
+  done
+
+  log "Recommendation sent for: $alert_message"
+}
+
+build_deterministic_recommendation() {
+  local severity="$1"
+  local alert_message="$2"
+  local alert_key="$3"
+  local output_file="$4"
+  local snapshot_file="${ALERT_STATE_DIR}/status-current.env"
+
+  node - "$severity" "$alert_message" "$alert_key" "$snapshot_file" "$RUNBOOK_RECOMMENDATIONS_FILE" > "$output_file" <<'NODE'
+const fs = require("fs");
+const path = require("path");
+const [, , severity, alertMessage, alertKey, snapshotPath, recommendationsPath] = process.argv;
+
+const snapshot = {};
+try {
+  for (const line of fs.readFileSync(snapshotPath, "utf8").split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z0-9_]+)="?(.*?)"?$/);
+    if (match) snapshot[match[1]] = match[2];
+  }
+} catch (_) {}
+
+const value = (key, fallback = "NA") => {
+  const raw = snapshot[key];
+  return raw === undefined || raw === "" ? fallback : raw;
+};
+
+function readJson(filePath) {
+  const candidates = [
+    filePath,
+    path.resolve(process.cwd(), "config/runbook-recommendations.json"),
+    "/root/.openclaw/config/runbook-recommendations.json"
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(fs.readFileSync(candidate, "utf8"));
+    } catch (_) {}
+  }
+
+  return null;
+}
+
+const recommendationsData = readJson(recommendationsPath);
+if (!recommendationsData || !Array.isArray(recommendationsData.recommendations)) process.exit(2);
+
+const normalizedSeverity = String(severity || "").toUpperCase();
+const recommendation = recommendationsData.recommendations.find((item) => {
+  return item
+    && item.alert_key === alertKey
+    && Array.isArray(item.severities)
+    && item.severities.map((entry) => String(entry).toUpperCase()).includes(normalizedSeverity);
+});
+
+if (!recommendation) process.exit(2);
+
+const hasSnapshot = Object.keys(snapshot).length > 0;
+const metricBasis = Array.isArray(recommendation.basis_metrics)
+  ? recommendation.basis_metrics
+      .map((key) => `${key}=${value(key)}`)
+      .filter((entry) => !entry.endsWith("=NA"))
+      .join(" ")
+  : "";
+const basis = hasSnapshot
+  ? `근거: ${metricBasis || `alert_key=${alertKey} severity=${severity}`}`
+  : "근거: 현재 snapshot 없음";
+
+const lines = [
+  `${recommendation.title || `${alertKey} ${severity} 대응`}: ${basis}`,
+  recommendation.runbook_section ? `Runbook: ${recommendation.runbook_section}` : "",
+  ...((recommendation.immediate_checks || []).map((item) => `즉시 확인: ${item}`)),
+  ...((recommendation.operator_review_actions || []).map((item) => `운영자 검토: ${item}`))
+].filter(Boolean);
+
+process.stdout.write(lines.join("\n"));
+NODE
+}
+send_alert_recommendation() {
+  local severity="$1"
+  local alert_message="$2"
+  local alert_key="${3:-}"
+  local text_file
+
+  if [ -z "$WEBHOOK_URL" ]; then
+    return
+  fi
+
+  text_file=$(mktemp)
+  if build_deterministic_recommendation "$severity" "$alert_message" "$alert_key" "$text_file"; then
+    if [ -s "$text_file" ]; then
+      log "Deterministic recommendation matched (alert_key=${alert_key:-unknown})"
+      send_recommendation_text_file "$alert_message" "$text_file"
+      rm -f "$text_file"
+      return
+    fi
+  fi
+  rm -f "$text_file"
+
+  log "No deterministic recommendation matched (alert_key=${alert_key:-unknown}); using LLM fallback"
+  send_llm_recommendation "$severity" "$alert_message" "$alert_key"
+}
+
+# runbook deterministic mapping에 없는 알림만 LLM fallback으로 추론한다.
 send_llm_recommendation() {
   local severity="$1"
   local alert_message="$2"
+  local alert_key="${3:-unknown}"
 
   if [ -z "$WEBHOOK_URL" ]; then
     return
@@ -240,33 +429,67 @@ send_llm_recommendation() {
     return
   fi
 
+  if ! wait_for_gateway_ready; then
+    return
+  fi
+
   local snapshot_file payload_file response_file text_file
   snapshot_file="${ALERT_STATE_DIR}/status-current.env"
   payload_file=$(mktemp)
   response_file=$(mktemp)
   text_file=$(mktemp)
 
-  node - "$severity" "$alert_message" "$snapshot_file" > "$payload_file" <<'NODE'
+  node - "$severity" "$alert_message" "$alert_key" "$snapshot_file" "$RUNBOOK_RECOMMENDATIONS_FILE" > "$payload_file" <<'NODE'
 const fs = require("fs");
-const [, , severity, alertMessage, snapshotPath] = process.argv;
+const path = require("path");
+const [, , severity, alertMessage, alertKey, snapshotPath, recommendationsPath] = process.argv;
 let snapshot = "";
 try {
   snapshot = fs.readFileSync(snapshotPath, "utf8");
 } catch (_) {}
 
+function readJson(filePath) {
+  const candidates = [
+    filePath,
+    path.resolve(process.cwd(), "config/runbook-recommendations.json"),
+    "/root/.openclaw/config/runbook-recommendations.json"
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(fs.readFileSync(candidate, "utf8"));
+    } catch (_) {}
+  }
+
+  return {};
+}
+
+const recommendationData = readJson(recommendationsPath);
+const targetSystem = Array.isArray(recommendationData.target_system_summary)
+  ? recommendationData.target_system_summary.map((item) => `- ${item}`)
+  : [
+      "- Amazon Linux 2 single EC2",
+      "- 1 vCPU, about 952 MiB memory",
+      "- Docker Compose: Spring Boot app + MySQL",
+      "- Nginx reverse proxy",
+      "- Actuator/node-exporter/mysqld-exporter metrics"
+    ];
+
 const input = [
-  `[${severity}] 알림이 발생했어: ${alertMessage}`,
+  `[${severity}] runbook에 직접 매핑된 deterministic recommendation이 없는 알림이 발생했어.`,
+  `alert_key: ${alertKey}`,
+  `alert_message: ${alertMessage}`,
   "",
-  "아래는 현재 서버 snapshot이야.",
+  "Target system:",
+  ...targetSystem,
+  "",
+  "Current snapshot:",
+  snapshot || "(snapshot 없음)",
+  "",
   "중요: 도구 실행, 명령 실행, 파일 읽기, SSH 접속을 하지 말고 제공된 알림 메시지와 snapshot만 사용해.",
-  "이 알림에 대해 현재 서버 상태를 분석하고 구체적인 대응 조치를 Discord 메시지로 짧게 안내해줘.",
-  "메모리, SSH, Spring Boot Health, Webhook, snapshot stale, 응답시간, 에러율 알림은 runbook 대응 절차가 있는 것으로 보고 runbook-first로 안내해.",
-  "그 외 알림이면 'runbook에 직접 절차 없음'이라고 밝힌 뒤 현재 snapshot을 근거로 추론 기반 권장 조치를 제안해.",
-  "재시작, 설정 변경, 배포 같은 상태 변경 작업은 운영자가 검토할 조치로만 표현하고 실행하지 마.",
-  "3~5줄 이내로 핵심만 작성해.",
-  "",
-  "Snapshot:",
-  snapshot || "(snapshot 없음)"
+  "없는 정보는 단정하지 말고 확인 항목으로 분리해.",
+  "상태 변경 작업은 운영자가 검토할 조치로만 제안해.",
+  "`runbook에 직접 절차 없음`을 먼저 밝히고, 서버 환경/아키텍처와 현재 snapshot 기반의 추론 기반 권장 조치를 3~5줄로 제안해."
 ].join("\n");
 
 process.stdout.write(JSON.stringify({
@@ -351,40 +574,7 @@ NODE
     return
   fi
 
-  # Discord Webhook으로 후속 메시지 전송
-  node - "$text_file" <<'NODE' | while IFS= read -r rec_payload; do
-const fs = require("fs");
-const path = process.argv[2];
-const text = fs.readFileSync(path, "utf8").trim();
-const prefix = "📋 **[권장 조치]** ";
-const max = 1900;
-
-if (!text) {
-  process.exit(0);
-}
-
-const message = `${prefix}${text}`;
-for (let i = 0; i < message.length; i += max) {
-  process.stdout.write(JSON.stringify({ content: message.slice(i, i + max) }) + "\n");
-}
-NODE
-    local rec_http_code
-    rec_http_code=$(curl -s -o /dev/null -w "%{http_code}" \
-      -H "Content-Type: application/json" \
-      -d "$rec_payload" \
-      "$WEBHOOK_URL" 2>/dev/null)
-
-    if [ "$?" -ne 0 ]; then
-      rec_http_code="000"
-    fi
-
-    case "$rec_http_code" in
-      2*) ;;
-      *) log "LLM recommendation webhook send failed (http=${rec_http_code})" ;;
-    esac
-  done
-
-  log "LLM recommendation sent for: $alert_message"
+  send_recommendation_text_file "$alert_message" "$text_file"
   rm -f "$payload_file" "$response_file" "$text_file"
 }
 
@@ -448,7 +638,7 @@ handle_critical_reminder() {
   elapsed=$((now - last_alert_epoch))
 
   if [ "$elapsed" -ge "$CRITICAL_REMINDER_SECONDS" ] || [ "$checks_since_alert" -ge "$CRITICAL_REMINDER_CHECKS" ]; then
-    send_alert "CRITICAL" "${alert_message} — 지속 중 (${value}, ${checks_since_alert} checks, ${elapsed}s)"
+    send_alert "CRITICAL" "${alert_message} — 지속 중 (${value}, ${checks_since_alert} checks, ${elapsed}s)" "$key"
     set_critical_reminder_state "$key" "$now" "0"
     log "${label}: CRITICAL reminder sent (${value}, checks=${checks_since_alert}, elapsed=${elapsed}s)"
   else
@@ -477,13 +667,13 @@ handle_state_change() {
   fi
 
   if [ "$current_status" = "OK" ] && [ "$previous_status" != "OK" ]; then
-    send_alert "INFO" "${label} 복구됨 — 이전 ${previous_status}, 현재 ${value}"
+    send_alert "INFO" "${label} 복구됨 — 이전 ${previous_status}, 현재 ${value}" "$key"
     clear_critical_reminder_state "$key"
   elif [ "$current_status" = "WARN" ]; then
-    send_alert "WARN" "$alert_message"
+    send_alert "WARN" "$alert_message" "$key"
     clear_critical_reminder_state "$key"
   elif [ "$current_status" = "CRITICAL" ]; then
-    send_alert "CRITICAL" "$alert_message"
+    send_alert "CRITICAL" "$alert_message" "$key"
     set_critical_reminder_state "$key" "$(date +%s)" "0"
   else
     clear_critical_reminder_state "$key"

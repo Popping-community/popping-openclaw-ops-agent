@@ -10,6 +10,7 @@ LAST_SUCCESS_FILE="${STATE_DIR}/last_success.state"
 REPO="Popping-community/popping-server"
 SNAPSHOT_STALE_WARN_MIN="${SNAPSHOT_STALE_WARN_MIN:-20}"
 SNAPSHOT_STALE_CRITICAL_MIN="${SNAPSHOT_STALE_CRITICAL_MIN:-30}"
+RUNBOOK_RECOMMENDATIONS_FILE="${RUNBOOK_RECOMMENDATIONS_FILE:-/root/.openclaw/config/runbook-recommendations.json}"
 
 mkdir -p "$STATE_DIR"
 
@@ -103,6 +104,71 @@ ci_context() {
   print_kv "github_actions_fingerprint" "unavailable"
 }
 
+runbook_recommendation_context() {
+  node - "$SNAPSHOT_FILE" "$RUNBOOK_RECOMMENDATIONS_FILE" <<'NODE'
+const fs = require("fs");
+const path = require("path");
+const [, , snapshotPath, recommendationsPath] = process.argv;
+
+function readEnv(filePath) {
+  const values = {};
+  try {
+    for (const line of fs.readFileSync(filePath, "utf8").split(/\r?\n/)) {
+      const match = line.match(/^([A-Za-z0-9_]+)="?(.*?)"?$/);
+      if (match) values[match[1]] = match[2];
+    }
+  } catch (_) {}
+  return values;
+}
+
+function readJson(filePath) {
+  const candidates = [
+    filePath,
+    path.resolve(process.cwd(), "config/runbook-recommendations.json"),
+    "/root/.openclaw/config/runbook-recommendations.json"
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(fs.readFileSync(candidate, "utf8"));
+    } catch (_) {}
+  }
+  return {};
+}
+
+function metricBucket(value, warn, critical) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "OK";
+  if (number >= critical) return "CRITICAL";
+  if (number >= warn) return "WARN";
+  return "OK";
+}
+
+const snapshot = readEnv(snapshotPath);
+const data = readJson(recommendationsPath);
+const recommendations = Array.isArray(data.recommendations) ? data.recommendations : [];
+const candidates = [
+  { alert_key: "memory", severity: metricBucket(snapshot.memory_pct, 80, 95) },
+  { alert_key: "app_health", severity: snapshot.health === "DOWN" ? "CRITICAL" : "OK" },
+  { alert_key: "avg_response", severity: snapshot.avg_response_status || "OK" },
+  { alert_key: "error_rate", severity: snapshot.error_rate_status || "OK" }
+].filter((item) => item.severity === "WARN" || item.severity === "CRITICAL");
+
+const matches = [];
+for (const candidate of candidates) {
+  const match = recommendations.find((item) => {
+    return item
+      && item.alert_key === candidate.alert_key
+      && Array.isArray(item.severities)
+      && item.severities.map((entry) => String(entry).toUpperCase()).includes(candidate.severity);
+  });
+  if (match) matches.push({ alert_key: candidate.alert_key, severity: candidate.severity, recommendation: match });
+}
+
+process.stdout.write(`runbook_active_recommendations_json=${JSON.stringify(matches)}\n`);
+NODE
+}
+
 monitor_context() {
   if [ -f "$LAST_SUCCESS_FILE" ]; then
     local last_success_epoch last_success_utc last_success_file now age_min
@@ -174,6 +240,7 @@ TMP_CONTEXT="${STATE_DIR}/heartbeat-context.tmp"
   read_snapshot
   monitor_context
   ci_context
+  runbook_recommendation_context
 } | tee "$TMP_CONTEXT"
 
 if [ "$MODE" = "full-report" ]; then
