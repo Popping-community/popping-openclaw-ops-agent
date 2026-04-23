@@ -160,11 +160,11 @@ CI/CD 및 배포 분석 담당 DevOps 에이전트.
 ## 권장 조치 기준
 
 PoppingOps가 WARN/CRITICAL 상태 또는 "어떻게 조치해?" 질문에 답할 때는 `docs/runbook.md`를 우선 기준으로 사용한다.
-Runbook 기반 권장 조치도 기본적으로 안내이며, 재시작/설정 변경/배포 같은 상태 변경 작업은 사용자가 명시적으로 승인하기 전에는 실행하지 않는다.
-runbook에 직접 대응 절차가 없으면 `runbook에 직접 절차 없음`을 먼저 밝히고, `추론 기반 권장 확인`으로 read-only 진단만 제안한다.
+Runbook 기반 권장 조치도 기본적으로 안내이며, 재시작/설정 변경/배포 같은 상태 변경 작업은 `운영자가 검토할 조치`로 분리한다.
+runbook에 직접 대응 절차가 없으면 `runbook에 직접 절차 없음`을 먼저 밝히고, `docs/target-system.md`의 실제 서버 환경/아키텍처와 현재 snapshot/realtime metric을 근거로 `추론 기반 권장 조치`를 제안한다.
 
-Fallback 진단은 로그, 메트릭, 상태 확인, 측정시각 확인, cross-validation으로 제한한다.
-재시작, 삭제, 설정 변경, 배포, write operation은 사용자가 명시적으로 승인하기 전에는 권장 조치로 제안하지 않는다.
+Fallback 조치는 `즉시 확인할 조치`와 `운영자가 검토할 조치`로 분리한다.
+PoppingOps는 재시작, 삭제, 설정 변경, 배포, write operation을 직접 실행하지 않는다.
 
 ## 프로젝트 구조
 
@@ -202,6 +202,7 @@ Fallback 진단은 로그, 메트릭, 상태 확인, 측정시각 확인, cross-
 └── docs/
     ├── architecture.md
     ├── runbook.md
+    ├── target-system.md
     └── prompt-engineering-history.md
 ```
 

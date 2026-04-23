@@ -167,6 +167,12 @@ Full Report format:
   - {concrete action}
 ```
 
+Recommended actions in Full Report must be runbook-first:
+- If `/root/.openclaw/docs/runbook.md` has a matching section, summarize that procedure.
+- If no runbook section matches, say `runbook에 직접 절차 없음` and provide `추론 기반 권장 조치` based on `/root/.openclaw/docs/target-system.md` plus the current snapshot/realtime metrics.
+- Split fallback recommendations into `즉시 확인할 조치` and `운영자가 검토할 조치`.
+- Do not execute restart, config change, deploy, delete, or other write operations.
+
 Do not include a full metric table in the 6-hour Full Report unless the user explicitly asks. The full metric table belongs to user-requested `서버 상태 확인해줘` or Daily Summary.
 
 ## Daily Summary - Daily 9AM KST
@@ -223,6 +229,8 @@ Daily Summary format:
 ▸ 오늘의 조치
   - {required action, or 없음}
 ```
+
+Daily Summary actions must also be runbook-first. If no runbook section matches, say `runbook에 직접 절차 없음` and base `추론 기반 권장 조치` on `/root/.openclaw/docs/target-system.md` plus the current snapshot/realtime metrics.
 
 Daily Summary should not return `HEARTBEAT_OK`.
 

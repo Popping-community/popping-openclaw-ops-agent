@@ -146,7 +146,7 @@ Report both timestamps:
 - Counter totals are cumulative. Rate metrics are interval values from snapshot delta calculation.
 - Recommended actions must be runbook-first. Use `/root/.openclaw/docs/runbook.md` when WARN/CRITICAL status appears or the user asks what to do next.
 - Runbook-based recommendations are guidance, not automatic actions. Do not execute restart, config changes, deploy, or write operations unless the user explicitly approves.
-- If no runbook section matches, clearly separate fallback advice under `추론 기반 권장 확인`.
+- If no runbook section matches, clearly separate fallback advice under `추론 기반 권장 조치` and base it on `/root/.openclaw/docs/target-system.md` plus the current server metrics.
 
 ## Severity Thresholds
 
@@ -179,11 +179,12 @@ Overall severity = highest individual severity.
 
 Fallback rules:
 - If no runbook section matches the issue, say `runbook에 직접 절차 없음`.
-- Then provide conservative read-only diagnostics under `추론 기반 권장 확인`.
-- Allowed fallback actions: logs, metrics, status checks, timestamp checks, cross-validation.
-- Do not recommend restart, delete, config changes, deploy, or write operations unless the user explicitly approves.
+- Then provide `추론 기반 권장 조치`, based on `/root/.openclaw/docs/target-system.md` and the current snapshot/realtime metrics.
+- Split fallback recommendations into `즉시 확인할 조치` and `운영자가 검토할 조치`.
+- Immediate checks must stay read-only: logs, metrics, status checks, timestamp checks, cross-validation.
+- Operator-reviewed actions may include restart, config changes, deploy, Nginx reload, TLS certificate renewal, Security Group review, or pool tuning, but do not execute them.
 - If the same pattern repeats, suggest adding it to `/root/.openclaw/docs/runbook.md`.
 
 Execution rule:
 - Runbook-based recommendations are still guidance.
-- If a runbook suggests restart or another state-changing operation, present it as `승인 후 검토할 조치` and wait for explicit user approval before execution.
+- Do not execute restart, config change, deploy, delete, or other write operations.

@@ -82,6 +82,7 @@ const input = [
   "- HEARTBEAT_OK를 반환하지 마.",
   "- 임의로 SSH raw metric을 다시 수집하지 말고 아래 context와 최신 snapshot을 우선해.",
   "- 측정시각, 데이터 상태, 트래픽 지표 기준을 포함해.",
+  "- 오늘의 조치는 runbook을 우선하고, runbook에 직접 절차가 없으면 target-system 문서의 실제 서버 환경/아키텍처와 현재 snapshot/realtime metric 기반의 추론 기반 권장 조치를 제안해.",
   "- github_actions_available=true이면 CI/CD를 수집 제외라고 쓰지 말고 github_actions_runs_json을 요약해.",
   "- github_actions_available=false일 때만 github_actions_unavailable 값을 근거로 수집 제외/수집 실패를 명시해.",
   "- 데이터가 없으면 추측하지 말고 수집 제외/수집 실패를 명시해.",

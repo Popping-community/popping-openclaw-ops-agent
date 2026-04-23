@@ -104,6 +104,7 @@ const input = [
   "- HEARTBEAT_OK를 반환하지 마. 이 요청은 helper가 full_report_should_report=true일 때만 호출된다.",
   "- 임의로 SSH raw metric을 다시 수집하지 말고 helper output과 최신 snapshot을 우선해.",
   "- 측정시각, 데이터 상태, full_report_reason, 핵심 이슈, 권장 조치를 포함해.",
+  "- 권장 조치는 runbook을 우선하고, runbook에 직접 절차가 없으면 target-system 문서의 실제 서버 환경/아키텍처와 현재 snapshot/realtime metric 기반의 추론 기반 권장 조치를 제안해.",
   "- 6시간 Full Report는 전체 metric table이 아니라 새 이슈/심각도 변화 중심으로 압축해.",
   "- 데이터가 없으면 추측하지 말고 수집 제외/수집 실패를 명시해.",
   "",
