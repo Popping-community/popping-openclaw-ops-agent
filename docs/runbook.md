@@ -202,6 +202,7 @@ WARN/CRITICAL 알림은 먼저 Discord Webhook으로 전송되고, 전송 성공
 - `LLM recommendation request failed (http=..., attempt=.../...); retrying`
 - `LLM recommendation failed (http=...)`
 - `LLM recommendation returned empty`
+- `LLM recommendation suppressed: agent failure response`
 - `LLM recommendation webhook send failed (http=...)`
 
 1. Gateway token 변수가 있는지 확인한다. 우선순위는 `OPENCLAW_GATEWAY_TOKEN`, `GATEWAY_TOKEN`, `/root/.openclaw/openclaw.json` 순서다.

@@ -258,8 +258,11 @@ const input = [
   `[${severity}] 알림이 발생했어: ${alertMessage}`,
   "",
   "아래는 현재 서버 snapshot이야.",
+  "중요: 도구 실행, 명령 실행, 파일 읽기, SSH 접속을 하지 말고 제공된 알림 메시지와 snapshot만 사용해.",
   "이 알림에 대해 현재 서버 상태를 분석하고 구체적인 대응 조치를 Discord 메시지로 짧게 안내해줘.",
-  "runbook(docs/runbook.md)에 절차가 있으면 그걸 우선하고, 없으면 'runbook에 직접 절차 없음'이라고 밝힌 뒤 /root/.openclaw/docs/target-system.md의 실제 서버 환경/아키텍처와 현재 snapshot을 근거로 추론 기반 권장 조치를 제안해.",
+  "메모리, SSH, Spring Boot Health, Webhook, snapshot stale, 응답시간, 에러율 알림은 runbook 대응 절차가 있는 것으로 보고 runbook-first로 안내해.",
+  "그 외 알림이면 'runbook에 직접 절차 없음'이라고 밝힌 뒤 현재 snapshot을 근거로 추론 기반 권장 조치를 제안해.",
+  "재시작, 설정 변경, 배포 같은 상태 변경 작업은 운영자가 검토할 조치로만 표현하고 실행하지 마.",
   "3~5줄 이내로 핵심만 작성해.",
   "",
   "Snapshot:",
@@ -338,6 +341,12 @@ NODE
 
   if [ ! -s "$text_file" ]; then
     log "LLM recommendation returned empty"
+    rm -f "$payload_file" "$response_file" "$text_file"
+    return
+  fi
+
+  if grep -qiE "Agent couldn't generate a response|tool actions may have already been executed|couldn't generate a response" "$text_file"; then
+    log "LLM recommendation suppressed: agent failure response"
     rm -f "$payload_file" "$response_file" "$text_file"
     return
   fi
