@@ -9,9 +9,22 @@ PoppingOps는 반복적인 서버 감시는 deterministic script가 처리하고
 EC2 exporters / Spring Boot actuator
   -> Detection layer: scripts/health-check.sh
   -> State layer: /tmp/health-check-alerts/status-current.env
-  -> Analysis layer: PoppingOps LLM
-  -> Notification layer: Discord Webhook
-  -> Interaction layer: Discord bot
+
+Detection -> Notification
+  -> Discord Webhook (WARN/CRITICAL/복구)
+
+Detection/State -> Recommendation
+  -> JSON runbook
+  -> unmatched only -> Gateway /v1/responses LLM fallback
+  -> Discord follow-up
+
+State -> Analysis
+  -> heartbeat-context.sh / snapshot
+  -> PoppingOps LLM
+  -> Daily Summary / Full Report / user request
+
+Interaction layer
+  -> Discord bot
 ```
 
 ## Detection Layer
@@ -67,6 +80,27 @@ Snapshot freshness 기준:
 `/tmp` 기반 상태는 컨테이너 재시작 시 초기화될 수 있다. 재시작 직후 첫 rate 계산은 `init` 상태가 될 수 있으며, 이는 정상 동작이다.
 이 경우 복구 상태 기억, 중복 알림 상태, CRITICAL reminder 상태도 초기화될 수 있다.
 
+## Recommendation Layer
+
+권장 조치 기준 자체는 자동 알림 후속 전송에만 묶여 있지 않다. 다만 각 경로의 구현 방식은 같지 않다. 자동 알림 후속 메시지는 `health-check.sh`가 deterministic하게 처리하고, Full Report·Daily Summary·사용자 요청은 같은 기준을 프롬프트/에이전트 규칙에서 우선 사용하도록 구성되어 있다.
+
+자동 후속 전송 경로만 보면, 권장 조치 경로는 알림 판단과 분리되어 있다.
+`health-check.sh`는 Discord Webhook으로 WARN/CRITICAL 알림을 실제 전송한 경우에만 후속 권장 조치를 생성한다. 여기에는 metric 상태 전이로 보낸 서버 장애 알림뿐 아니라 health-check self-monitoring WARN, CRITICAL 지속 재알림도 포함된다.
+
+우선순위는 다음과 같다:
+
+1. `config/runbook-recommendations.json`의 JSON runbook에서 알림 종류와 심각도에 맞는 권장 조치를 찾는다.
+2. 매칭되는 권장 조치가 있으면 LLM 없이 후속 Discord 메시지로 보낸다.
+3. 매칭이 없을 때만 Gateway readiness를 기다린 뒤 Gateway `/v1/responses` LLM fallback을 호출한다.
+
+이 자동 후속 전송 경로는 알림 판단에 영향을 주지 않는다. 권장 조치 생성이 실패해도 원래 WARN/CRITICAL 알림 자체는 유지된다.
+
+공통 권장 조치 기준은 다음처럼 재사용된다:
+
+- 자동 알림 후속 메시지: `health-check.sh`가 `config/runbook-recommendations.json`을 먼저 매칭하고, 미매칭일 때만 Gateway fallback을 호출한다.
+- Full Report / Daily Summary: scheduler가 같은 JSON recommendation data를 LLM payload에 포함하고, 권장 조치 섹션에서 먼저 참고하도록 지시한다.
+- 사용자 요청: 에이전트 규칙이 `docs/runbook.md`를 우선 기준으로 답하도록 지시하고, 직접 절차가 없을 때만 target-system 요약과 현재 snapshot/realtime metric 기반 fallback 조치를 제안한다.
+
 ## Analysis Layer
 
 PoppingOps LLM은 모든 체크를 직접 수행하지 않는다.
@@ -79,19 +113,21 @@ LLM이 사용되는 경로:
 | User request | Discord bot interaction | 최신 snapshot 또는 실시간 SSH gauge |
 | Full Report | `scripts/full-report-scheduler.sh` | `heartbeat-context.sh full-report` output |
 | Daily Summary | `scripts/daily-summary-scheduler.sh` | `heartbeat-context.sh daily-summary` output |
-| Alert recommendation | `health-check.sh` WARN/CRITICAL 알림 전송 성공 후 | JSON recommendation mapping 또는 알림 메시지 + 현재 snapshot |
+| Alert fallback recommendation | `health-check.sh` WARN/CRITICAL 알림 전송 성공 후, JSON runbook 미매칭 시 | 알림 메시지 + 현재 snapshot |
 
-자동 작업의 LLM 호출은 스크립트가 OpenClaw Gateway `/v1/responses`를 호출하는 방식이다. 구조화 runbook recommendation에 매칭되는 반복 알림은 LLM 없이 처리하고, 매칭이 없는 fallback만 Gateway를 사용한다.
+자동 작업의 LLM 호출은 스크립트가 OpenClaw Gateway `/v1/responses`를 호출하는 방식이다. 반복 알림의 권장 조치는 JSON runbook을 먼저 확인하고, 매칭이 없는 fallback만 Gateway를 사용한다.
 
 `heartbeat-context.sh`는 snapshot age, freshness status, last_success age, GitHub Actions context를 deterministic하게 만든 뒤 LLM input으로 넘긴다.
 Full Report는 snapshot stale WARN/CRITICAL도 보고 필요 조건으로 본다.
 
-정기 health-check의 임계값 판단은 이 레이어를 거치지 않는다. WARN/CRITICAL 알림 전송 성공 시 `config/runbook-recommendations.json`에 `alert_key + severity`가 매칭되는 권장 조치는 health-check가 LLM 없이 생성하고, 매칭이 없는 알림만 Gateway를 통해 LLM fallback을 호출한다. Full Report와 Daily Summary도 같은 JSON을 payload에 넣어 권장 조치 섹션의 우선 기준으로 사용한다.
+정기 health-check의 임계값 판단과 기본 장애 알림은 이 레이어를 거치지 않는다. 다만 권장 조치 기준은 이 레이어 밖의 보고서와 사용자 요청에도 재사용된다. Full Report와 Daily Summary는 같은 JSON runbook을 payload에 포함해 권장 조치 섹션의 우선 참고 자료로 사용하고, 사용자 요청은 별도 에이전트 규칙에서 runbook-first로 해석한다.
 
 ## Notification Layer
 
 자동 알림은 Discord Webhook으로 전송된다.
 `DISCORD_WEBHOOK_URL`은 WARN/CRITICAL/복구 알림에 사용하고, 리포트는 전용 webhook이 있으면 우선 사용한다.
+
+기본 장애 알림은 상태 전이 감지 직후 바로 전송되며, LLM 분석이나 권장 조치 생성 완료를 기다리지 않는다.
 
 Webhook 알림 정책:
 
@@ -103,7 +139,7 @@ Webhook 알림 정책:
 | CRITICAL 유지 | 2시간 또는 3회 체크마다 재알림 |
 | WARN/CRITICAL -> OK | 복구 알림 전송 |
 
-WARN/CRITICAL 알림이 실제 전송 성공한 경우에만 백그라운드에서 권장 조치를 후속 Discord 메시지로 보낸다. 중복 억제된 알림과 복구 알림에는 권장 조치를 붙이지 않는다. 권장 조치 생성 실패는 알림 자체에 영향을 주지 않는다.
+WARN/CRITICAL 알림이 실제 전송 성공한 경우에만 Recommendation layer가 백그라운드에서 권장 조치를 후속 Discord 메시지로 보낸다. 중복 억제된 알림과 복구 알림에는 권장 조치를 붙이지 않는다. 즉, "기본 장애 알림 뒤"에만 붙는 것이 아니라 실제 전달된 WARN/CRITICAL 알림 전체를 기준으로 동작한다. 권장 조치 생성 실패는 알림 자체에 영향을 주지 않는다.
 
 알림은 두 종류로 분리한다.
 
@@ -129,14 +165,15 @@ snapshot이 오래됐으면 정상 수치처럼 보이더라도 freshness WARN/C
 
 ## Design Boundary
 
-핵심 경계는 수집/판단과 해석/대화의 분리다.
+핵심 경계는 수집/판단, 권장 조치, 해석/대화의 분리다.
 
-- `health-check.sh`: 빠른 수집, 임계값 판단, snapshot 저장, webhook 알림, WARN/CRITICAL 시 JSON 기반 권장 조치 후속 전송
+- `health-check.sh`: 빠른 수집, 임계값 판단, snapshot 저장, webhook 기본 알림 전송
+- `JSON runbook + fallback`: 실제 전달된 WARN/CRITICAL 알림 뒤에 권장 조치 후속 전송
 - `heartbeat-context.sh`: LLM에 넣을 deterministic context 생성
 - PoppingOps LLM: context 요약, 원인 후보 정리, 운영자용 설명
 - Discord bot: 사용자의 질문을 받아 적절한 에이전트와 분석 흐름으로 연결
 
-이 구조 덕분에 정상 상태의 반복 체크는 토큰을 쓰지 않는다. WARN/CRITICAL 권장 조치도 `config/runbook-recommendations.json`에 `alert_key + severity`가 매칭되면 토큰을 쓰지 않으며, LLM은 사용자 요청, Full Report, Daily Summary, 그리고 매칭이 없는 알림의 fallback에서 사용한다.
+이 구조 덕분에 정상 상태의 반복 체크는 토큰을 쓰지 않는다. WARN/CRITICAL 권장 조치도 JSON runbook에 매칭되면 토큰을 쓰지 않으며, LLM은 사용자 요청, Full Report, Daily Summary, 그리고 매칭이 없는 알림의 fallback에서 사용한다.
 장애 대응 절차는 [runbook](runbook.md)에 분리되어 있다.
 모니터링 대상인 Popping-community 서버의 런타임 환경과 운영 해석 기준은 [target-system](target-system.md)에 분리되어 있다.
 
